@@ -19,5 +19,5 @@ socket.on('round-result',d=>{ $('countdown').textContent=''; const [one,two]=d.c
 socket.on('round-reset',()=>{selected=null;$('ready-btn').disabled=false;$('result').innerHTML='';document.querySelectorAll('[data-choice]').forEach(x=>{x.disabled=false;x.classList.remove('selected')});});
 socket.on('match-finished',d=>{$('winner').innerHTML=`<small>🏆 MATCH GEWONNEN 🏆</small><strong>${d.winner}</strong><span class="finish-countdown" id="finish-countdown">${d.seconds}</span><em>Die Arena schließt gleich</em><button class="btn leave-btn" id="leave-btn-overlay">Leave</button>`;document.body.classList.add('winner-overlay-open');$('winner').classList.add('show');$('leave-btn-overlay').onclick=leaveToHome;});
 socket.on('match-countdown',d=>{const el=$('finish-countdown');if(el)el.textContent=d.seconds;});
-socket.on('room-closed',leaveToHome);
+socket.on('room-closed',()=>{ resetGameUi(); role=null; show('home'); });
 socket.on('disconnect',()=>{if($('game').classList.contains('active')&&!$('winner').classList.contains('show'))$('status').textContent='Verbindung verloren.';});
