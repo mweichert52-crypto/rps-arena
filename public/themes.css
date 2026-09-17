@@ -41,22 +41,18 @@ body[data-theme="gold"]{--theme-accent:#ffd166;--bg:#151007;--bg2:#30200b;--pane
 body[data-theme]{background:linear-gradient(120deg,var(--bg),var(--bg2),color-mix(in srgb,var(--theme-accent),#000 78%),var(--bg));background-size:400% 400%}
 .btn.primary{background:linear-gradient(135deg,var(--violet),var(--pink));box-shadow:0 16px 35px color-mix(in srgb,var(--violet),transparent 60%)}
 
-/* Audience/theme menu polish */
 .theme-menu{padding:12px 14px 14px;border:1px solid color-mix(in srgb,var(--theme-accent),transparent 52%);background:color-mix(in srgb,var(--panel),var(--theme-accent) 10%);box-shadow:0 0 18px color-mix(in srgb,var(--theme-accent),transparent 70%)}
 .theme-title{color:var(--muted);opacity:.9}
 .theme-option{padding:8px 10px;border-radius:999px;border-color:color-mix(in srgb,var(--theme-accent),transparent 78%);background:rgba(255,255,255,.02)}
 .theme-option.active{border-color:var(--theme-accent);background:color-mix(in srgb,var(--theme-accent),rgba(255,255,255,.08) 20%);box-shadow:0 0 18px color-mix(in srgb,var(--theme-accent),transparent 56%)}
 .theme-option i{box-shadow:0 0 12px var(--swatch)}
-
-/* Keep only the requested extra tweaks */
 .how{display:none!important}
-.game-wrap:has(.winner.show):before{content:'';position:fixed;inset:0;z-index:4;background:rgba(5,6,14,.22);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);pointer-events:none}
-.winner{position:fixed!important;inset:0;z-index:5;display:none!important}
-.winner.show{display:flex!important}
-.winner .leave-btn{margin-top:30px!important;width:auto!important;min-width:0!important;padding:6px 14px!important;border:1px solid var(--theme-accent)!important;border-radius:8px!important;background:color-mix(in srgb,var(--theme-accent),transparent 80%)!important;color:var(--text)!important;font:700 10px 'JetBrains Mono',monospace!important;letter-spacing:1px;line-height:1.2;box-shadow:0 0 16px color-mix(in srgb,var(--theme-accent),transparent 20%),inset 0 0 8px color-mix(in srgb,var(--theme-accent),transparent 78%)!important}
-.winner .leave-btn:hover{transform:translateY(-1px)!important}
-
-/* Remove the permanently pink home-screen glow points. */
 #home .orb-a,#home .orb-b{display:none}
 
+/* Keep the winner content sharp while softly blurring only the arena behind it. */
+.game-wrap:has(.winner.show):before{content:'';position:fixed;inset:0;z-index:4;background:transparent;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);pointer-events:none}
+.winner{position:fixed!important;inset:0;z-index:5;display:none!important;background:transparent!important}
+.winner.show{display:flex!important}
+.winner .leave-btn{margin-top:38px!important;width:auto!important;min-width:0!important;padding:8px 16px!important;border:1px solid var(--theme-accent)!important;border-radius:8px!important;background:color-mix(in srgb,var(--theme-accent),transparent 80%)!important;color:var(--text)!important;font:700 11px 'JetBrains Mono',monospace!important;letter-spacing:1px;line-height:1.2;box-shadow:0 0 16px color-mix(in srgb,var(--theme-accent),transparent 20%),inset 0 0 8px color-mix(in srgb,var(--theme-accent),transparent 78%)!important}
+.winner .leave-btn:hover{transform:translateY(-1px)!important}
 @media(max-width:650px){.theme-menu{margin-top:35px}.theme-options{display:grid;grid-template-columns:1fr 1fr}.theme-option{justify-content:center}}
