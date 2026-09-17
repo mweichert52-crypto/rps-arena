@@ -1,10 +1,148 @@
-/* Winner overlay: keep the existing arena layout unchanged. */
-.game-wrap{position:relative}
-.game-wrap:has(.winner.show):before{content:'';position:fixed;inset:0;background:rgba(5,6,14,.45);backdrop-filter:blur(8px);z-index:4;pointer-events:none}
-.winner{position:fixed;inset:0;z-index:5;display:none!important}
-.winner.show{display:flex!important}
-/* Remove only the three instructional lines from the home screen. */
+/* Theme selector */
+.theme-menu{
+  margin-top:48px;
+  max-width:650px;
+  padding:18px 20px;
+  border:1px solid rgba(167,139,250,.28);
+  border-radius:18px;
+  background:rgba(23,27,45,.62);
+  backdrop-filter:blur(14px);
+  box-shadow:0 15px 40px rgba(0,0,0,.2);
+}
+.theme-title{
+  font:11px 'JetBrains Mono';
+  letter-spacing:2px;
+  color:var(--muted);
+  margin-bottom:12px;
+}
+.theme-options{
+  display:flex;
+  gap:9px;
+  flex-wrap:wrap;
+}
+.theme-option{
+  --swatch:#a78bfa;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:9px 12px;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:999px;
+  background:rgba(255,255,255,.03);
+  color:var(--text);
+  font-size:12px;
+  font-weight:600;
+  transition:.2s ease;
+}
+.theme-option[data-theme="void"]{ --swatch:#a78bfa; }
+.theme-option[data-theme="green"]{ --swatch:#63ff87; }
+.theme-option[data-theme="blue"]{ --swatch:#60a5fa; }
+.theme-option[data-theme="red"]{ --swatch:#ff5864; }
+.theme-option[data-theme="gold"]{ --swatch:#ffd166; }
+.theme-option i{
+  width:11px;
+  height:11px;
+  flex:0 0 11px;
+  border-radius:50%;
+  display:inline-block;
+  background:var(--swatch);
+  box-shadow:0 0 10px var(--swatch);
+}
+.theme-option:hover,
+.theme-option.active{
+  border-color:var(--swatch);
+  background:rgba(255,255,255,.06);
+  box-shadow:0 0 18px color-mix(in srgb, var(--swatch), transparent 62%);
+  transform:translateY(-2px);
+}
+body[data-theme="void"]{
+  --theme-accent:#a78bfa;
+  --bg:#090a12;
+  --bg2:#121526;
+  --panel:#171b2d;
+  --line:#393f68;
+  --muted:#b0aecd;
+  --violet:#8b5cf6;
+  --violet-2:#a78bfa;
+  --pink:#ff5edb;
+  --cyan:#67e8f9;
+}
+body[data-theme="green"]{
+  --theme-accent:#63ff87;
+  --bg:#08110b;
+  --bg2:#142414;
+  --panel:#142319;
+  --line:#3b683f;
+  --muted:#b8d0b7;
+  --violet:#78d64b;
+  --violet-2:#d8ff4f;
+  --pink:#63ff87;
+  --cyan:#a9ffb0;
+}
+body[data-theme="blue"]{
+  --theme-accent:#60a5fa;
+  --bg:#07101e;
+  --bg2:#102344;
+  --panel:#111d35;
+  --line:#31598c;
+  --muted:#a9bddb;
+  --violet:#3b82f6;
+  --violet-2:#60a5fa;
+  --pink:#22d3ee;
+  --cyan:#93c5fd;
+}
+body[data-theme="red"]{
+  --theme-accent:#ff5864;
+  --bg:#16080c;
+  --bg2:#35121c;
+  --panel:#28121b;
+  --line:#743044;
+  --muted:#dfb0b8;
+  --violet:#e53955;
+  --violet-2:#ff5864;
+  --pink:#ff9a5c;
+  --cyan:#ffb0a0;
+}
+body[data-theme="gold"]{
+  --theme-accent:#ffd166;
+  --bg:#151007;
+  --bg2:#30200b;
+  --panel:#251b0d;
+  --line:#80602a;
+  --muted:#d8c49b;
+  --violet:#d99a24;
+  --violet-2:#ffd166;
+  --pink:#ff9f1c;
+  --cyan:#ffe7a0;
+}
+body[data-theme]{
+  background:linear-gradient(120deg, var(--bg), var(--bg2), color-mix(in srgb, var(--theme-accent), #000 78%), var(--bg));
+  background-size:400% 400%;
+}
+.btn.primary{
+  background:linear-gradient(135deg, var(--violet), var(--pink));
+  box-shadow:0 16px 35px color-mix(in srgb, var(--violet), transparent 60%);
+}
+@media(max-width:650px){
+  .theme-menu{ margin-top:35px; }
+  .theme-options{ display:grid; grid-template-columns:1fr 1fr; }
+  .theme-option{ justify-content:center; }
+}
+
+/* Keep only the requested extra tweaks */
 .how{display:none!important}
-/* Only the Leave button is changed: smaller, lower, and themed. */
-.winner .leave-btn{margin-top:30px!important;width:auto!important;min-width:0!important;padding:6px 14px!important;border:1px solid var(--theme-accent)!important;border-radius:8px!important;background:color-mix(in srgb,var(--theme-accent),transparent 80%)!important;color:var(--text)!important;font:700 10px 'JetBrains Mono',monospace!important;letter-spacing:1px;line-height:1.2;box-shadow:0 0 16px color-mix(in srgb,var(--theme-accent),transparent 20%),inset 0 0 8px color-mix(in srgb,var(--theme-accent),transparent 78%)!important}
-.winner .leave-btn:hover{transform:translateY(-1px)!important;box-shadow:0 0 22px color-mix(in srgb,var(--theme-accent),transparent 5%),inset 0 0 12px color-mix(in srgb,var(--theme-accent),transparent 65%)!important}
+.winner .leave-btn{
+  margin-top:30px!important;
+  width:auto!important;
+  min-width:0!important;
+  padding:6px 14px!important;
+  border:1px solid var(--theme-accent)!important;
+  border-radius:8px!important;
+  background:color-mix(in srgb,var(--theme-accent),transparent 80%)!important;
+  color:var(--text)!important;
+  font:700 10px 'JetBrains Mono',monospace!important;
+  letter-spacing:1px;
+  line-height:1.2;
+  box-shadow:0 0 16px color-mix(in srgb,var(--theme-accent),transparent 20%), inset 0 0 8px color-mix(in srgb,var(--theme-accent),transparent 78%)!important;
+}
+.winner .leave-btn:hover{ transform:translateY(-1px)!important; }
