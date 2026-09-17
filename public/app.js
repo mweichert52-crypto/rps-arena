@@ -1,5 +1,7 @@
 const socket = io(); let role = null; let selected = null; const $ = (id) => document.getElementById(id); const show = (id) => { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); $(id).classList.add('active'); };
 const icons = { rock: '🪨', paper: '📄', scissors: '✂️' }; const labels = { rock: 'Stein', paper: 'Papier', scissors: 'Schere' };
+const savedTheme = localStorage.getItem('rps-theme') || 'void'; document.body.dataset.theme = savedTheme;
+document.querySelectorAll('.theme-option').forEach(button => { button.classList.toggle('active', button.dataset.theme === savedTheme); button.onclick = () => { const theme = button.dataset.theme; document.body.dataset.theme = theme; localStorage.setItem('rps-theme', theme); document.querySelectorAll('.theme-option').forEach(x => x.classList.toggle('active', x === button)); }; });
 document.querySelectorAll('[data-screen]').forEach(b => b.onclick = () => show(b.dataset.screen));
 function error(id, text){$(id).textContent=text||''} function enter(data, errorId){ if(data.error)return error(errorId,data.error); role=data.role; $('room-code').textContent=data.code; if(data.targetWins)$('match-rule').textContent=`Ziel: ${data.targetWins} Sieg${data.targetWins===1?'':'e'}`; show('game'); }
 $('create').onclick=()=>socket.emit('create-room',{name:$('player-name').value,targetWins:$('target-wins').value},d=>enter(d,'play-error'));
