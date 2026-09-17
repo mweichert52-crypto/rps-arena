@@ -4,8 +4,8 @@ const savedTheme = localStorage.getItem('rps-theme') || 'void'; document.body.da
 document.querySelectorAll('.theme-option').forEach(button => { button.classList.toggle('active', button.dataset.theme === savedTheme); button.onclick = () => { const theme = button.dataset.theme; document.body.dataset.theme = theme; localStorage.setItem('rps-theme', theme); document.querySelectorAll('.theme-option').forEach(x => x.classList.toggle('active', x === button)); }; });
 document.querySelectorAll('[data-screen]').forEach(b => b.onclick = () => show(b.dataset.screen));
 function error(id, text){$(id).textContent=text||''}
-function resetGameUi(){ selected=null; $('winner').classList.remove('show'); $('result').innerHTML=''; $('ready-btn').disabled=false; document.querySelectorAll('[data-choice]').forEach(x=>{x.disabled=false;x.classList.remove('selected')}); }
-function leaveToHome(){ if(socket.connected) socket.emit('leave-room'); resetGameUi(); role=null; show('home'); }
+function resetGameUi(){ selected=null; $('winner').classList.remove('show'); $('winner').innerHTML=''; $('result').innerHTML=''; $('ready-btn').disabled=false; $('countdown').textContent=''; document.querySelectorAll('[data-choice]').forEach(x=>{x.disabled=false;x.classList.remove('selected')}); }
+function leaveToHome(){ if(socket.connected && socket.dataRoom) socket.emit('leave-room'); resetGameUi(); role=null; show('home'); }
 function enter(data, errorId){ if(data.error)return error(errorId,data.error); role=data.role; $('room-code').textContent=data.code; if(data.targetWins)$('match-rule').textContent=`Ziel: ${data.targetWins} Sieg${data.targetWins===1?'':'e'}`; show('game'); }
 $('create').onclick=()=>socket.emit('create-room',{name:$('player-name').value,targetWins:$('target-wins').value},d=>enter(d,'play-error'));
 $('join').onclick=()=>socket.emit('join-room',{name:$('player-name').value,code:$('join-code').value},d=>enter(d,'play-error'));
