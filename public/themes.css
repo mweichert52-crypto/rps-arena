@@ -1,6 +1,10 @@
-/* Winner overlay: centered and blurred without changing the normal arena layout. */
+/* Winner overlay: keep the existing arena layout unchanged. */
 .game-wrap{position:relative}
 .game-wrap:has(.winner.show):before{content:'';position:fixed;inset:0;background:rgba(5,6,14,.45);backdrop-filter:blur(8px);z-index:4;pointer-events:none}
 .winner{position:fixed;inset:0;z-index:5;display:none!important}
 .winner.show{display:flex!important}
-.winner .leave-btn{margin-top:22px!important;width:auto!important;min-width:0!important;padding:7px 16px!important;background:color-mix(in srgb,var(--theme-accent),transparent 80%)!important;border-color:var(--theme-accent)!important;color:var(--text)!important;box-shadow:0 0 18px color-mix(in srgb,var(--theme-accent),transparent 20%)!important}
+/* Remove only the three instructional lines from the home screen. */
+.how{display:none!important}
+/* Only the Leave button is changed: smaller, lower, and themed. */
+.winner .leave-btn{margin-top:30px!important;width:auto!important;min-width:0!important;padding:6px 14px!important;border:1px solid var(--theme-accent)!important;border-radius:8px!important;background:color-mix(in srgb,var(--theme-accent),transparent 80%)!important;color:var(--text)!important;font:700 10px 'JetBrains Mono',monospace!important;letter-spacing:1px;line-height:1.2;box-shadow:0 0 16px color-mix(in srgb,var(--theme-accent),transparent 20%),inset 0 0 8px color-mix(in srgb,var(--theme-accent),transparent 78%)!important}
+.winner .leave-btn:hover{transform:translateY(-1px)!important;box-shadow:0 0 22px color-mix(in srgb,var(--theme-accent),transparent 5%),inset 0 0 12px color-mix(in srgb,var(--theme-accent),transparent 65%)!important}
