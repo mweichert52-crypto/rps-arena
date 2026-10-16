@@ -14,6 +14,7 @@ app.get('/health', (req, res) => res.send('ok'));
 
 // In-memory rooms
 const rooms = new Map();
+const tournaments = new Map();
 const choices = new Set(['rock', 'paper', 'scissors']);
 
 function makeCode() {
@@ -124,6 +125,10 @@ function startCountdown(r, seconds = 3) {
   }, 1000);
 }
 
+function publicTournamentList() {
+  return [...tournaments.values()].filter(t => t.isPublic && t.phase !== 'finished').map(t => ({ code: t.code, hostName: t.hostName, players: t.players.size }));
+}
+
 io.on('connection', s => {
   s.data = s.data || {};
 
@@ -132,6 +137,73 @@ io.on('connection', s => {
     try { cb(list); } catch (e) {}
   });
 
+  // Tournament endpoints: create, list, join, leave
+  s.on('list-public-tournaments', cb => {
+    try { cb(publicTournamentList()); } catch (e) { /* ignore */ }
+  });
+
+  s.on('create-tournament', ({ name, targetWins, maxPlayers, isPublic }, cb) => {
+    name = String(name || '').trim().slice(0,20);
+    if (!name) return cb && cb({ error: 'Bitte gib zuerst deinen Namen ein.' });
+    maxPlayers = Math.min(60, Math.max(4, Math.floor(Number(maxPlayers) / 2) * 2 || 8));
+    const code = makeCode();
+    const t = {
+      code,
+      phase: 'lobby',
+      hostId: s.id,
+      hostName: name,
+      targetWins: Math.min(10, Math.max(1, parseInt(targetWins, 10) || 3)),
+      maxPlayers,
+      players: new Map(), // id => { id, name, points }
+      isPublic: !!isPublic
+    };
+    // add host as player
+    t.players.set(s.id, { id: s.id, name, points: 0, inMatch: false });
+    tournaments.set(code, t);
+    s.join(code);
+    s.data.tournament = code;
+    s.data.role = 'host';
+    // broadcast updated public list
+    io.emit('public-tournaments', publicTournamentList());
+    if (cb) cb({ code, role: 'host' });
+  });
+
+  s.on('join-tournament', ({ name, code }, cb) => {
+    name = String(name || '').trim().slice(0,20);
+    const t = tournaments.get(String(code || '').toUpperCase());
+    if (!t) return cb && cb({ error: 'Turnier nicht gefunden.' });
+    if (!name) return cb && cb({ error: 'Bitte gib zuerst deinen Namen ein.' });
+    if (t.players.size >= t.maxPlayers) return cb && cb({ error: 'Turnier ist voll.' });
+    // add player
+    t.players.set(s.id, { id: s.id, name, points: 0, inMatch: false });
+    s.join(t.code);
+    s.data.tournament = t.code;
+    s.data.role = 'player';
+    // inform host/state update
+    io.to(t.code).emit('tournament-state', { code: t.code, phase: t.phase, hostName: t.hostName, players: [...t.players.values()].map(p => ({ name: p.name })) });
+    io.emit('public-tournaments', publicTournamentList());
+    if (cb) cb({ code: t.code, role: 'player' });
+  });
+
+  s.on('leave-tournament', () => {
+    const code = s.data.tournament;
+    if (!code) return;
+    const t = tournaments.get(code);
+    if (!t) return;
+    t.players.delete(s.id);
+    try { s.leave(code); } catch (e) {}
+    s.data.tournament = null; s.data.role = null;
+    // if host left, close tournament
+    if (s.id === t.hostId) {
+      tournaments.delete(t.code);
+      io.to(t.code).emit('room-closed');
+    } else {
+      io.to(t.code).emit('tournament-state', { code: t.code, phase: t.phase, hostName: t.hostName, players: [...t.players.values()].map(p => ({ name: p.name })) });
+      io.emit('public-tournaments', publicTournamentList());
+    }
+  });
+
+  // existing room handlers (rooms, choose, ready, etc.)
   s.on('create-room', ({ name, targetWins, isPublic }, cb) => {
     name = String(name || '').trim().slice(0,20);
     if (!name) return cb && cb({ error: 'Bitte gib zuerst deinen Namen ein.' });
