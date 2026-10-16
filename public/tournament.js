@@ -9,7 +9,24 @@
   const screen = id => {
     document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
     $(id)?.classList.add('active');
+
+    // hide global back buttons when in tournament screen (tournament should only have a colored "Turnier Verlassen" button)
+    document.querySelectorAll('.back').forEach(b => { b.hidden = (id === 'tournament'); });
   };
+
+  // inject minimal CSS tweaks so "back" buttons are colorful and tour-leave stays prominent
+  (function injectLocalStyles(){
+    if (document.getElementById('tournament-local-styles')) return;
+    const css = document.createElement('style');
+    css.id = 'tournament-local-styles';
+    css.textContent = `
+      .back{ background: linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; border:0; padding:8px 10px; border-radius:8px; display:inline-flex; align-items:center; gap:8px; cursor:pointer; box-shadow:var(--shadow); }
+      .back:hover{ transform:translateY(-2px); }
+      /* ensure the tournament leave button is clearly colored */
+      .tour-leave{ background: linear-gradient(135deg,#ff6b83,#c92b4b)!important; color:#fff!important; border:0!important }
+    `;
+    document.head.appendChild(css);
+  })();
 
   function detectPublicSetting() {
     const tp = $('tournament-public');
@@ -53,14 +70,32 @@
         el.innerHTML = '<div class="empty-state">Keine offenen Turniere.</div>';
         return;
       }
-      el.innerHTML = list.map(t => `
+
+      el.innerHTML = list.map(t => {
+        // if we're already in this tournament, don't show a "Joinen" button
+        let actionHtml = '';
+        if (code && code === t.code) {
+          // if we're the host, show a Starten button
+          if (role === 'host') {
+            actionHtml = `<button class="btn tiny" data-tourney-start="${t.code}" type="button">Turnier starten</button>`;
+          } else {
+            actionHtml = `<small style="color:var(--muted)">Bereits beigetreten</small>`;
+          }
+        } else {
+          // show join button for tournaments we haven't joined
+          actionHtml = `<button class="btn tiny" data-tourney-join="${t.code}" type="button">Joinen</button>`;
+        }
+
+        return `
         <div class="tournament-card">
           <div class="title-row"><strong>${t.code}</strong><small>${t.players}/${t.maxPlayers}</small></div>
           <div class="meta">${esc(t.hostName)} · Ziel: ${t.targetWins}</div>
-          <div class="tournament-actions"><button class="btn tiny" data-tourney-join="${t.code}" type="button">Joinen</button></div>
+          <div class="tournament-actions">${actionHtml}</div>
         </div>
-      `).join('');
+      `
+      }).join('');
 
+      // bind join buttons
       el.querySelectorAll('[data-tourney-join]').forEach(btn => {
         btn.onclick = () => {
           const name = $('tournament-name').value.trim();
@@ -70,6 +105,16 @@
             if (d?.error) return $('tournament-error').textContent = d.error;
             enterTournament(d, 'player');
           });
+        };
+      });
+
+      // bind start buttons (host)
+      el.querySelectorAll('[data-tourney-start]').forEach(btn => {
+        btn.onclick = () => {
+          // only emit start if we are host of this tournament
+          if (role === 'host' && code === btn.dataset.tourneyStart) {
+            socket.emit('start-tournament');
+          }
         };
       });
     });
@@ -108,7 +153,11 @@
     // render lobby for either host or players
     const lobby = $('tournament-lobby');
     if (!lobby) return;
-    const playersHtml = (d.players || []).map((p, i) => `<div class="tour-player"><strong>${esc(p.name)}</strong> <small>${p.points ?? 0} Punkte${p.inMatch ? ' · im Match' : ''}</small></div>`).join('') || '<div class="empty-state">Keine Spieler</div>';
+
+    // ensure we always show every player who joined with their entered name and points
+    const playersHtml = (d.players || []).map((p, i) => `
+      <div class="tour-player"><strong>${esc(p.name)}</strong> <small>${p.points ?? 0} Punkte${p.inMatch ? ' · im Match' : ''}</small></div>
+    `).join('') || '<div class="empty-state">Keine Spieler</div>';
 
     let hostControls = '';
     if (role === 'host') {
@@ -190,7 +239,7 @@
   // socket event handlers
   socket.on('public-tournaments', list => {
     // if tournament panel active, refresh
-    if (document.querySelector('#tournament').classList.contains('active')) refreshTournaments();
+    if (document.querySelector('#tournament')?.classList.contains('active')) refreshTournaments();
   });
 
   socket.on('tournament-state', d => {
