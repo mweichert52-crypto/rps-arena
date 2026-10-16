@@ -5,7 +5,7 @@
   let role = null;
   let inMatch = false;
 
-  const esc = s => String(s ?? '').replace(/[&<>"]'/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const esc = s => String(s ?? '').replace(/[&<>\"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const screen = id => {
     document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
     $(id)?.classList.add('active');
