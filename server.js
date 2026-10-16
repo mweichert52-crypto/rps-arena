@@ -227,13 +227,28 @@ io.on('connection', s => {
     }
     try { s.leave(code); } catch (e) {}
     s.data.room = null; s.data.role = null;
+
+    // If a player left while countdown was running, abort countdown and reset remaining player state
+    if (r.countdownTimer) {
+      clearInterval(r.countdownTimer);
+      r.countdownTimer = null;
+      try { io.to(r.code).emit('countdown', { seconds: 0 }); } catch (e) {}
+      // reset choices/ready for remaining players
+      if (Array.isArray(r.players)) {
+        r.players.forEach(p => { if (p) { p.choice = null; p.ready = false; } });
+      }
+      r.phase = 'ready';
+      try { io.to(r.code).emit('round-reset'); } catch (e) {}
+      broadcastRoomState(r);
+    }
+
     // if both players gone, remove room
     if (!r.players.some(Boolean)) { rooms.delete(r.code); io.to(r.code).emit('room-closed'); }
     else broadcastRoomState(r);
   });
 
   s.on('disconnect', () => {
-    // treat like leave-room
+    // treat like leave-room but also ensure timers aborted if player leaves mid-countdown
     const code = s.data.room;
     if (!code) return;
     const r = rooms.get(code);
@@ -244,6 +259,20 @@ io.on('connection', s => {
     } else {
       r.spectators.delete(s.id);
     }
+
+    // Abort countdown if running
+    if (r.countdownTimer) {
+      clearInterval(r.countdownTimer);
+      r.countdownTimer = null;
+      try { io.to(r.code).emit('countdown', { seconds: 0 }); } catch (e) {}
+      if (Array.isArray(r.players)) {
+        r.players.forEach(p => { if (p) { p.choice = null; p.ready = false; } });
+      }
+      r.phase = 'ready';
+      try { io.to(r.code).emit('round-reset'); } catch (e) {}
+      broadcastRoomState(r);
+    }
+
     if (!r.players.some(Boolean)) { rooms.delete(r.code); io.to(r.code).emit('room-closed'); }
     else broadcastRoomState(r);
   });
