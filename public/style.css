@@ -551,6 +551,17 @@ input, select {
   box-shadow: var(--shadow);
 }
 
+#tournament-open.tournament-home-btn {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 999 !important;
+  pointer-events: auto !important;
+}
+
 .tournament-panel {
   max-width: 960px;
 }
@@ -689,8 +700,8 @@ input, select {
     align-items: flex-start;
     gap: 12px;
   }
-  .tournament-home-btn {
-    right: 18px;
-    bottom: 18px;
+  #tournament-open.tournament-home-btn {
+    top: 72% !important;
+    transform: translate(-50%, -50%) !important;
   }
 }
