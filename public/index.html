@@ -3,143 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>RPS Arena</title>
-    <link rel="stylesheet" href="/style.css" />
-    <link rel="stylesheet" href="/theme.css" />
+    <title>Deleted</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111827; color: #f9fafb; font-family: Arial, sans-serif; }
+      body { display: grid; place-items: center; }
+      .box { text-align: center; padding: 2rem; }
+      h1 { font-size: 2rem; margin: 0 0 .75rem; }
+      p { margin: 0; color: #d1d5db; }
+    </style>
   </head>
   <body>
-    <main id="app">
-      <section class="screen active" id="home">
-        <div class="orb orb-a"></div>
-        <div class="orb orb-b"></div>
-        <div class="hero">
-          <div class="hero-eyebrow"></div>
-          <h1>RPS<br><span>ARENA</span></h1>
-          <p class="tagline">Live RPS im Arena-Style.</p>
-          <div class="actions">
-            <button class="btn primary" data-screen="play">Spiel starten</button>
-            <button class="btn" data-screen="watch">Zuschauen</button>
-            <button class="btn" data-screen="tournament">Turnier</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="screen" id="play">
-        <button class="back" data-screen="home">← Zurück</button>
-        <div class="panel">
-          <div class="eyebrow">SPIELER-BEREICH</div>
-          <h2>Bereit für den Kampf?</h2>
-          <p class="muted">Gib deinen Namen ein und startest in eine Arena.</p>
-
-          <label>Dein Name<input id="player-name" maxlength="20" placeholder="z. B. Alex"></label>
-          <label>Ziel-Siege<select id="target-wins"><option value="1">1</option><option value="3" selected>3</option><option value="5">5</option></select></label>
-          <label class="check"><input type="checkbox" id="lobby-public" checked> Öffentlich</label>
-
-          <div class="split-row">
-            <button class="btn primary full" id="create">Arena erstellen</button>
-          </div>
-
-          <div class="join-row">
-            <input id="join-code" maxlength="6" placeholder="RAUMCODE" />
-            <button class="btn" id="join">Beitreten</button>
-          </div>
-          <p class="error" id="play-error"></p>
-        </div>
-      </section>
-
-      <section class="screen" id="watch">
-        <button class="back" data-screen="home">← Zurück</button>
-        <div class="panel narrow">
-          <div class="eyebrow">ZUSCHAUER-MODUS</div>
-          <h2>Sei live dabei.</h2>
-          <p class="muted">Gib deinen Namen ein und wähle eine laufende Arena.</p>
-          <label>Dein Zuschauername<input id="watch-name" maxlength="20" placeholder="z. B. Alex"></label>
-          <label>Raumcode optional<input id="watch-code" maxlength="6" placeholder="RAUMCODE"></label>
-          <button class="btn primary full" id="watch-btn">Per Code zuschauen →</button>
-          <p class="error" id="watch-error"></p>
-          <div id="watch-lobbies"></div>
-        </div>
-      </section>
-
-      <section class="screen" id="game">
-        <header>
-          <div class="brand">RPS <span>ARENA</span></div>
-          <div class="room-pill">
-            <small>DU SPIELST IN</small>
-            <strong id="room-code"></strong>
-            <button id="copy">CODE KOPIEREN</button>
-          </div>
-        </header>
-
-        <div class="game-wrap">
-          <div class="live"><span></span> LIVE <b id="spectators">0</b> Zuschauer</div>
-          <p class="status" id="status">Verbinde…</p>
-          <div class="match-rule" id="match-rule">Ziel: 3 Siege</div>
-
-          <div class="scoreboard">
-            <div class="player-card">
-              <small>SPIELER 01</small>
-              <strong id="name-0">—</strong>
-              <div class="score" id="score-0">0</div>
-              <div class="score-label">PUNKTE</div>
-              <div class="ready" id="ready-0"></div>
-            </div>
-            <div class="versus">VS</div>
-            <div class="player-card">
-              <small>SPIELER 02</small>
-              <strong id="name-1">—</strong>
-              <div class="score" id="score-1">0</div>
-              <div class="score-label">PUNKTE</div>
-              <div class="ready" id="ready-1"></div>
-            </div>
-          </div>
-
-          <div class="round-result" id="result"></div>
-
-          <div class="choices" id="choices">
-            <button data-choice="rock"><span>🪨</span><b>Stein</b><small>ROCK</small></button>
-            <button data-choice="paper"><span>📄</span><b>Papier</b><small>PAPER</small></button>
-            <button data-choice="scissors"><span>✂️</span><b>Schere</b><small>SCISSORS</small></button>
-          </div>
-
-          <button class="btn primary ready-btn" id="ready-btn">Bereit <span>→</span></button>
-          <div class="countdown" id="countdown"></div>
-          <div class="winner" id="winner"></div>
-        </div>
-      </section>
-
-      <section class="screen" id="tournament">
-        <button class="back" data-screen="home">← Zurück</button>
-        <div class="panel tournament-panel">
-          <div class="eyebrow">TURNIER-MODUS</div>
-          <h2>🏆 Deine Arena, dein Sieger.</h2>
-          <p class="muted">Erstelle ein öffentliches Turnier oder tritt einem bestehenden bei.</p>
-
-          <div id="tournament-setup">
-            <label>Dein Name<input id="tournament-name" maxlength="20" placeholder="z. B. Alex"></label>
-            <label>Ziel-Siege<select id="tournament-wins"><option value="1">1</option><option value="3" selected>3</option><option value="5">5</option></select></label>
-            <label>Teilnehmer<select id="tournament-size"></select></label>
-            <label class="check"><input type="checkbox" id="tournament-public" checked> Öffentlich</label>
-
-            <div class="tour-actions">
-              <button class="btn primary" id="tournament-host">Turnier hosten</button>
-              <button class="btn" id="tournament-join">Turnier beitreten</button>
-              <button class="btn" id="tournament-refresh">Aktualisieren</button>
-            </div>
-
-            <label>Code beitreten<input id="tournament-code" maxlength="6" placeholder="TURNIERCODE"></label>
-            <p class="error" id="tournament-error"></p>
-          </div>
-
-          <div id="tournament-lobby" hidden></div>
-          <div id="tournament-match" hidden></div>
-          <div id="tournament-list"></div>
-        </div>
-      </section>
-    </main>
-
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="/app.js"></script>
-    <script src="/tournament.js"></script>
+    <div class="box">
+      <h1>Deleted</h1>
+      <p>This site has been removed.</p>
+    </div>
   </body>
 </html>
