@@ -56,7 +56,10 @@
     .tournament-home-btn span{display:inline-block}
     .tour-leave{margin-top:18px!important;height:48px!important;min-height:48px!important;border:1px solid rgba(255,99,130,.18)!important;background:linear-gradient(135deg,rgba(255,70,90,.12),rgba(255,30,70,.06))!important;color:#ffb3bf!important;box-shadow:0 6px 18px rgba(255,70,90,.12)!important;font:800 13px 'JetBrains Mono',monospace!important;letter-spacing:1px;border-radius:10px}
     .tour-leave:hover{background:linear-gradient(135deg,#ff6b83,#c92b4b)!important;color:#fff!important;border-color:#ffb3bf!important;box-shadow:0 12px 30px rgba(255,70,90,.28)!important;transform:translateY(-2px)}
-    .tour-code button{margin-left:14px}.tour-card{min-height:66px}.tour-card small{line-height:1.4}.tour-player{min-height:40px;align-items:center}.tour-rank{min-height:45px}.tour-actions .btn:disabled{opacity:.42;filter:grayscale(.6);cursor:not-allowed}.tour-state-note{margin:14px 0;color:var(--muted);text-align:center}.tour-match-row{gap:14px}.tour-match-row small{margin-left:auto;color:var(--theme-accent)}
+    .tour-code{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+    .tour-code .room-code{font-weight:800;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid var(--line)}
+    .tour-code .copy-note{color:var(--muted);font-size:0.85rem;margin-left:6px}
+    .tour-actions .btn:disabled{opacity:.42;filter:grayscale(.6);cursor:not-allowed}
     @media(max-width:900px){.tournament-home-btn{left:50%;top:72%;transform:translate(-50%,-50%);min-width:140px;height:52px}}
     @media(max-width:650px){.tournament-home-btn{left:50%;top:80%;transform:translate(-50%,-50%);width:calc(100% - 32px)}.tour-code{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.tour-code button{margin-left:0}}
   `;
@@ -106,6 +109,8 @@
         try { sizes(); } catch (e) {}
         try { screen('tournament'); } catch (e) {}
         try { refreshTournaments(); } catch (e) { socket.emit('list-public-tournaments', () => {}); }
+        // focus name input so the user can start typing immediately
+        setTimeout(() => { $('tournament-name')?.focus(); }, 50);
       };
       btn.addEventListener('click', openHandler);
       btn.addEventListener('keydown', ev => {
@@ -190,6 +195,9 @@
     const box = $('tournament-lobby');
     if (!box) return;
     box.hidden = false;
+
+    // show room code for private lobbies until the tournament has been started
+    const showCode = state.code && state.phase !== 'running' && !state.isPublic;
     box.innerHTML = `
       <div class="tournament-lobby-box">
         <div class="title-row">
@@ -197,6 +205,7 @@
           <small>${state.players.length}/${state.maxPlayers}</small>
         </div>
         <div class="meta">Host: ${esc(state.hostName)} · Ziel: ${state.targetWins}</div>
+        ${showCode ? `<div class="tour-code"><div class="room-code">${esc(state.code)}</div><button id="tour-copy" class="btn tiny">Code kopieren</button><div class="copy-note" id="tour-copy-note"></div></div>` : ''}
         <div class="lobby-list">
           ${(state.players || []).map(p => `<div class="player-row">${esc(p.name)}${p.inMatch ? ' <span class="badge">in Match</span>' : ''}</div>`).join('')}
         </div>
@@ -213,18 +222,38 @@
     `;
 
     $('tour-leave')?.addEventListener('click', leaveTournament);
+
+    if (showCode) {
+      $('tour-copy')?.addEventListener('click', () => {
+        const txt = state.code;
+        try {
+          navigator.clipboard.writeText(txt);
+          const note = $('tour-copy-note');
+          if (note) { note.textContent = 'Kopiert!'; setTimeout(() => { note.textContent = '' }, 2000); }
+        } catch (e) {
+          // fallback
+          const input = document.createElement('input');
+          input.value = txt;
+          document.body.appendChild(input);
+          input.select();
+          document.execCommand('copy');
+          input.remove();
+        }
+      });
+    }
+
     if (isHost) {
       const startBtn = $('tour-start');
       const endBtn = $('tour-end');
+      const anyInMatch = (state.players || []).some(p => p.inMatch);
       if (state.liveMatches && state.liveMatches.length) {
         if (startBtn) startBtn.disabled = true;
       } else {
-        if (startBtn) startBtn.disabled = false;
+        if (startBtn) startBtn.disabled = anyInMatch || false;
       }
       startBtn?.addEventListener('click', () => socket.emit('start-tournament'));
       endBtn?.addEventListener('click', () => {
-        socket.emit('start-tournament');
-        socket.emit('leave-tournament');
+        socket.emit('end-tournament');
       });
     }
   }
@@ -239,7 +268,7 @@
       <div class="match-shell">
         <div class="title-row"><strong>Match</strong><small>${esc(data.players[0])} vs ${esc(data.players[1])}</small></div>
         <div class="meta">Ziel: ${data.targetWins} Siege</div>
-        <div id="matchcode" class="room-code">${code}</div>
+        <div id="matchcode" class="room-code">${code || ''}</div>
         <div id="result" class="result-box"></div>
         <div id="choices" class="choices">
           <button data-choice="rock" type="button"><span>🪨</span><b>Stein</b></button>
@@ -249,4 +278,147 @@
         <button id="ready-btn" class="btn primary" type="button">Bereit →</button>
         <div id="countdown" class="countdown"></div>
       </div>
+    `;
+
+    document.querySelectorAll('#tournament-match [data-choice]').forEach(btn => {
+      btn.onclick = () => {
+        if (btn.disabled) return;
+        document.querySelectorAll('#tournament-match [data-choice]').forEach(x => x.classList.remove('selected'));
+        btn.classList.add('selected');
+        socket.emit('choose', btn.dataset.choice);
+      };
+    });
+
+    $('tournament-match')?.querySelector('#ready-btn')?.addEventListener('click', () => {
+      socket.emit('ready');
+      document.querySelectorAll('#tournament-match [data-choice]').forEach(x => x.disabled = true);
+      $('tournament-match').querySelector('#ready-btn').disabled = true;
+    });
+  }
+
+  function refreshTournamentState() {
+    socket.emit('list-public-tournaments', refreshTournaments);
+  }
+
+  socket.on('public-tournaments', list => {
+    const el = $('tournament-list');
+    if (!el) return;
+    if (!list || !list.length) {
+      el.innerHTML = '<div class="empty-state">Keine offenen Turniere.</div>';
+      return;
+    }
+    el.innerHTML = list.map(t => `
+      <div class="tournament-card">
+        <div class="title-row"><strong>${esc(t.code)}</strong><small>${t.players}/${t.maxPlayers}</small></div>
+        <div class="meta">${esc(t.hostName)} · Ziel: ${t.targetWins}</div>
+        <button class="btn tiny" data-tourney-join="${t.code}" type="button">Joinen</button>
+      </div>
     `).join('');
+    el.querySelectorAll('[data-tourney-join]').forEach(btn => {
+      btn.onclick = () => {
+        const name = $('tournament-name').value.trim();
+        if (!name) return $('tournament-error').textContent = 'Bitte gib zuerst deinen Namen ein.';
+        socket.emit('join-tournament', { name, code: btn.dataset.tourneyJoin }, d => {
+          if (d?.error) return $('tournament-error').textContent = d.error;
+          enterTournament(d, 'player');
+        });
+      };
+    });
+  });
+
+  socket.on('tournament-state', state => {
+    if (!state) return;
+    code = state.code;
+    renderLobby(state);
+  });
+
+  socket.on('tournament-match', data => {
+    if (!data) return;
+    renderMatchView(data);
+    code = data.code;
+    screen('tournament');
+  });
+
+  socket.on('tournament-round-result', d => {
+    const resultBox = $('tournament-match')?.querySelector('#result');
+    if (resultBox) resultBox.innerHTML = `<div class="result-card"><div class="result-winner">${esc(d.winner || 'UNENTSCHIEDEN')}</div></div>`;
+  });
+
+  socket.on('tournament-live-matches', list => {
+    // host-only list
+    if (!list) return;
+    const hostBox = $('tournament-lobby');
+    if (!hostBox) return;
+    const existing = hostBox.querySelector('.match-list');
+    const html = `<div class="match-list"><h4>Live Matches</h4>${list.map(m => `<div class="match-row">${esc(m.players.join(' vs '))} <button class="btn tiny watch" data-match="${m.id}">Zuschauen</button></div>`).join('')}</div>`;
+    if (existing) existing.remove();
+    hostBox.querySelector('.leaderboard')?.insertAdjacentHTML('afterend', html);
+    hostBox.querySelectorAll('.watch').forEach(b => b.addEventListener('click', e => {
+      const id = b.dataset.match;
+      socket.emit('watch-match', id);
+    }));
+  });
+
+  socket.on('tournament-ended', data => {
+    const box = $('tournament-lobby');
+    if (!box) return;
+    box.hidden = false;
+    box.innerHTML = `
+      <div class="podium-wrap">
+        <div class="eyebrow">TURNIER BEENDET</div>
+        <h3>Das Turnier ist beendet!</h3>
+        <div class="podium">
+          ${(data.players || []).slice(0, 3).map((p, i) => `
+            <div class="podium-item place-${i + 1}">
+              <strong>${i + 1}. ${esc(p.name)}</strong>
+              <small>${p.points || 0} Punkte</small>
+            </div>
+          `).join('')}
+        </div>
+        <div class="leaderboard full-list">
+          <h4>Leaderboard</h4>
+          ${renderLeaderboard(data.players || [])}
+        </div>
+      </div>
+    `;
+    code = null;
+    role = null;
+  });
+
+  socket.on('room-closed', () => {
+    if (code) leaveTournament();
+  });
+
+  ensureTournamentButton();
+  sizes();
+  $('tournament-host')?.addEventListener('click', () => {
+    const name = $('tournament-name').value.trim();
+    if (!name) return $('tournament-error').textContent = 'Bitte gib zuerst deinen Namen ein.';
+    const targetWins = $('tournament-wins').value;
+    const maxPlayers = $('tournament-size').value;
+    const isPublic = !!$('tournament-public')?.checked;
+    socket.emit('create-tournament', { name, targetWins, maxPlayers, isPublic }, d => {
+      if (d?.error) return $('tournament-error').textContent = d.error;
+      role = 'host';
+      code = d.code;
+      $('tournament-setup').hidden = true;
+      $('tournament-lobby').hidden = false;
+      $('tournament-match').hidden = true;
+      screen('tournament');
+      socket.emit('list-public-tournaments', refreshTournaments);
+    });
+  });
+
+  $('tournament-join')?.addEventListener('click', () => {
+    const name = $('tournament-name').value.trim();
+    const codeInput = $('tournament-code').value.trim();
+    if (!name) return $('tournament-error').textContent = 'Bitte gib zuerst deinen Namen ein.';
+    if (!codeInput) return $('tournament-error').textContent = 'Bitte gib einen Turniercode ein.';
+    socket.emit('join-tournament', { name, code: codeInput }, d => {
+      if (d?.error) return $('tournament-error').textContent = d.error;
+      enterTournament(d, 'player');
+    });
+  });
+
+  $('tournament-refresh')?.addEventListener('click', refreshTournaments);
+})();
