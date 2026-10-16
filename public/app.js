@@ -6,6 +6,8 @@ let selected = null;
 let roomJoined = false;
 const $ = id => document.getElementById(id);
 
+let __localCountdownTimer = null; // fallback countdown when server doesn't reliably send countdown
+
 function show(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const el = $(id);
@@ -59,7 +61,7 @@ function renderLobbies(kind, rooms = []) {
   list.innerHTML = available.map(r => {
     const playerCount = (r.players && Array.isArray(r.players)) ? r.players.filter(Boolean).length : (r.players || 0);
     const hostName = (r.players && Array.isArray(r.players) && r.players.find(p => p && p.name) && r.players.find(p => p.name).name) || r.hostName || 'Wartet…';
-    return `<div class="lobby"><strong>${r.code}</strong><small>${playerCount} Spieler</small><div class="meta">${hostName}</div><div class="actions"><button class="btn" data-join="${r.code}" data-kind="${kind}">${kind==='player'?'Beitreten':'Zuschauen'}</button></div></div>`;
+    return `<div class="lobby"><strong>${r.code}</strong><small>${playerCount} Spieler</small><div class="meta">${hostName}</div><div class="actions"><button class="btn" data-join="${r.code}" data[...]`;
   }).join('');
 
   list.querySelectorAll('[data-join]').forEach(b => b.onclick = () => {
@@ -88,6 +90,8 @@ function resetGameUi() {
   document.querySelectorAll('[data-choice]').forEach(x => { x.classList.remove('selected'); x.disabled = false; });
   // reset ready indicators
   document.querySelectorAll('[data-ready-dot]').forEach(d => d.classList.remove('ready'));
+  // clear local countdown fallback
+  if (__localCountdownTimer) { clearInterval(__localCountdownTimer); __localCountdownTimer = null; }
 }
 
 function leaveToHome() {
@@ -185,12 +189,34 @@ socket.on('state', s => {
     if (bothReady) {
       if ($('ready-btn')) $('ready-btn').disabled = true;
       document.querySelectorAll('[data-choice]').forEach(x => x.disabled = true);
+
+      // start a local fallback countdown if server doesn't provide one quickly
+      const el = $('countdown');
+      if (el && !el.textContent && !__localCountdownTimer) {
+        let sec = 3;
+        el.textContent = sec;
+        if ($('ready-btn')) $('ready-btn').disabled = true;
+        document.querySelectorAll('[data-choice]').forEach(x => x.disabled = true);
+        __localCountdownTimer = setInterval(() => {
+          sec--;
+          if (sec > 0) {
+            el.textContent = sec;
+            return;
+          }
+          // stop local countdown at 0 and clear — real round-result should come from server
+          clearInterval(__localCountdownTimer);
+          __localCountdownTimer = null;
+          el.textContent = '';
+        }, 1000);
+      }
     }
   }
 });
 
 socket.on('countdown', d => {
   if (!$('game')?.classList.contains('active')) return;
+  // if server sends countdown, cancel any local fallback immediately to avoid conflict
+  if (__localCountdownTimer) { clearInterval(__localCountdownTimer); __localCountdownTimer = null; }
   const sec = Number(d.seconds);
   if (!Number.isFinite(sec)) return;
   const el = $('countdown');
@@ -223,6 +249,8 @@ socket.on('round-reset', () => {
   document.querySelectorAll('[data-choice]').forEach(x => { x.disabled = false; x.classList.remove('selected'); });
   // clear ready indicators on UI
   document.querySelectorAll('[data-ready-dot]').forEach(d => d.classList.remove('ready'));
+  // clear any local countdown
+  if (__localCountdownTimer) { clearInterval(__localCountdownTimer); __localCountdownTimer = null; }
 });
 
 socket.on('match-finished', d => {
