@@ -63,42 +63,63 @@
   document.head.appendChild(css);
 
   function ensureTournamentButton() {
-    if ($('tournament-open')) return;
-    const home = document.querySelector('#home .hero') || document.querySelector('#home');
-    const btn = document.createElement('button');
-    btn.id = 'tournament-open';
-    btn.className = 'tournament-home-btn';
-    btn.type = 'button';
+    const hero = document.querySelector('#home .hero') || document.querySelector('#home');
+    let btn = document.getElementById('tournament-open');
+
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.id = 'tournament-open';
+      btn.className = 'tournament-home-btn';
+      btn.type = 'button';
+      btn.innerHTML = '<span>🏆</span><span>Turnier</span>';
+      document.body.appendChild(btn);
+    }
+
     btn.setAttribute('aria-label', 'Turnier öffnen');
     btn.tabIndex = 0;
-    btn.innerHTML = '<span>🏆</span><span>Turnier</span>';
 
-    // Always add to body so the button is reliably visible and centered
-    document.body.appendChild(btn);
-
-    // If there's a visible home panel, hide the fixed button (to avoid overlap) and instead center it inside the home panel
     try {
-      if (home && home.offsetParent !== null) {
-        // center inside home by absolutely positioning relative to the home element
+      if (hero) {
+        if (getComputedStyle(hero).position === 'static') hero.style.position = 'relative';
         btn.style.position = 'absolute';
         btn.style.left = '50%';
         btn.style.top = '50%';
         btn.style.transform = 'translate(-50%,-50%)';
-        // ensure home is positioned to allow absolute child placement
-        const homeComputed = getComputedStyle(home);
-        if (homeComputed.position === 'static') home.style.position = 'relative';
-        home.appendChild(btn);
+      } else {
+        btn.style.position = 'fixed';
+        btn.style.left = '50%';
+        btn.style.top = '50%';
+        btn.style.transform = 'translate(-50%,-50%)';
       }
-    } catch (e) { /* ignore layout errors and keep the fixed body-centered button */ }
+    } catch (e) {
+      btn.style.position = 'fixed';
+      btn.style.left = '50%';
+      btn.style.top = '50%';
+      btn.style.transform = 'translate(-50%,-50%)';
+    }
 
-    // robust click and keyboard handler — ensure sizes are prepared, tournament screen shown and list refreshed
-    const openHandler = () => {
-      try { sizes(); } catch (e) {}
-      try { screen('tournament'); } catch (e) {}
-      try { refreshTournaments(); } catch (e) { socket.emit('list-public-tournaments', () => {}); }
-    };
-    btn.addEventListener('click', openHandler);
-    btn.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openHandler(); } });
+    btn.style.zIndex = '9999';
+    btn.style.pointerEvents = 'auto';
+
+    if (!btn.dataset.tourAttached) {
+      const openHandler = () => {
+        try { sizes(); } catch (e) {}
+        try { screen('tournament'); } catch (e) {}
+        try { refreshTournaments(); } catch (e) { socket.emit('list-public-tournaments', () => {}); }
+      };
+      btn.addEventListener('click', openHandler);
+      btn.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          openHandler();
+        }
+      });
+      btn.dataset.tourAttached = '1';
+    }
+
+    if (hero && btn.parentElement !== hero) {
+      hero.appendChild(btn);
+    }
   }
 
   function refreshTournaments() {
@@ -137,9 +158,7 @@
     $('tournament-lobby').hidden = false;
     $('tournament-match').hidden = true;
     screen('tournament');
-    // request fresh state
     socket.emit('list-public-tournaments', refreshTournaments);
-    // ask server for state by listening to next tournament-state emission
   }
 
   function leaveTournament() {
@@ -197,7 +216,6 @@
     if (isHost) {
       const startBtn = $('tour-start');
       const endBtn = $('tour-end');
-      // disable start while any live matches
       if (state.liveMatches && state.liveMatches.length) {
         if (startBtn) startBtn.disabled = true;
       } else {
@@ -282,16 +300,11 @@
   socket.on('tournament-state', state => {
     if (!state) return;
     code = state.code;
-    // if running, still show lobby and leaderboard to participants
     renderLobby(state);
-    if (state.phase === 'running') {
-      // host will receive live matches separately
-    }
   });
 
   socket.on('tournament-match', data => {
     if (!data) return;
-    // role can be 'host' or 'player'
     renderMatchView(data);
     code = data.code;
     screen('tournament');
@@ -303,11 +316,9 @@
   });
 
   socket.on('tournament-live-matches', list => {
-    // host-only list
     if (!list) return;
     const hostBox = $('tournament-lobby');
     if (!hostBox) return;
-    // append or update live matches panel
     const existing = hostBox.querySelector('.match-list');
     const html = `<div class="match-list"><h4>Live Matches</h4>${list.map(m => `<div class="match-row">${esc(m.players.join(' vs '))} <button class="btn tiny watch" data-match="${m.id}">Zuschauen</button></div>`).join('')}</div>`;
     if (existing) existing.remove();
@@ -364,7 +375,6 @@
       $('tournament-lobby').hidden = false;
       $('tournament-match').hidden = true;
       screen('tournament');
-      // request initial state
       socket.emit('list-public-tournaments', refreshTournaments);
     });
   });
