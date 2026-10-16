@@ -24,20 +24,40 @@
     if (!select.value) select.value = '8';
   }
 
+  // Styles for the tournament button + leave button polish
+  const css = document.createElement('style');
+  css.textContent = `
+    .tournament-home-btn{position:fixed;right:28px;bottom:28px;z-index:1200;min-width:154px;height:54px;font-size:15px;font-weight:800;letter-spacing:.2px;border-radius:12px;background:linear-gradient(90deg,var(--violet),var(--pink));color:#fff;border:0;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 30px rgba(139,92,246,.16)}
+    .tournament-home-btn span{display:inline-block}
+    .tour-leave{margin-top:18px!important;height:48px!important;min-height:48px!important;border:1px solid rgba(255,99,130,.18)!important;background:linear-gradient(135deg,rgba(255,70,90,.12),rgba(255,30,70,.06))!important;color:#ffb3bf!important;box-shadow:0 6px 18px rgba(255,70,90,.12)!important;font:800 13px 'JetBrains Mono',monospace!important;letter-spacing:1px;border-radius:10px}
+    .tour-leave:hover{background:linear-gradient(135deg,#ff6b83,#c92b4b)!important;color:#fff!important;border-color:#ffb3bf!important;box-shadow:0 12px 30px rgba(255,70,90,.28)!important;transform:translateY(-2px)}
+    .tour-code button{margin-left:14px}.tour-card{min-height:66px}.tour-card small{line-height:1.4}.tour-player{min-height:40px;align-items:center}.tour-rank{min-height:45px}.tour-actions .btn:disabled{opacity:.42;filter:grayscale(.6);cursor:not-allowed}.tour-state-note{margin:14px 0;color:var(--muted);text-align:center}.tour-match-row{gap:14px}.tour-match-row small{margin-left:auto;color:var(--theme-accent)}
+    @media(max-width:650px){.tournament-home-btn{right:16px;bottom:16px;width:calc(100% - 32px)}.tour-code{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.tour-code button{margin-left:0}}
+  `;
+  document.head.appendChild(css);
+
   function ensureTournamentButton() {
     if ($('tournament-open')) return;
     const home = document.querySelector('#home .hero') || document.querySelector('#home');
-    if (!home) return;
     const btn = document.createElement('button');
     btn.id = 'tournament-open';
     btn.className = 'tournament-home-btn';
     btn.type = 'button';
     btn.innerHTML = '<span>🏆</span><span>Turnier</span>';
-    home.appendChild(btn);
+    // Try to insert into the home panel if present, otherwise fallback to body so the button is always visible
+    if (home && home.firstElementChild) {
+      home.insertBefore(btn, home.firstElementChild);
+    } else if (home) {
+      home.appendChild(btn);
+    } else {
+      // append to body so it's visible on all pages
+      document.body.appendChild(btn);
+    }
+    // robust click handler — ensure sizes are prepared, tournament screen shown and list refreshed
     btn.addEventListener('click', () => {
-      sizes();
-      screen('tournament');
-      refreshTournaments();
+      try { sizes(); } catch (e) {}
+      try { screen('tournament'); } catch (e) {}
+      try { refreshTournaments(); } catch (e) { /* fallback: request list from server */ socket.emit('list-public-tournaments', () => {}); }
     });
   }
 
