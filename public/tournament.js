@@ -77,7 +77,9 @@
     $('tournament-lobby').hidden = false;
     $('tournament-match').hidden = true;
     screen('tournament');
-    refreshTournamentState();
+    // request fresh state
+    socket.emit('list-public-tournaments', refreshTournaments);
+    // ask server for state by listening to next tournament-state emission
   }
 
   function leaveTournament() {
@@ -112,7 +114,7 @@
     box.innerHTML = `
       <div class="tournament-lobby-box">
         <div class="title-row">
-          <strong>Turnier ${state.code}</strong>
+          <strong>Turnier ${esc(state.code)}</strong>
           <small>${state.players.length}/${state.maxPlayers}</small>
         </div>
         <div class="meta">Host: ${esc(state.hostName)} · Ziel: ${state.targetWins}</div>
@@ -132,11 +134,21 @@
     `;
 
     $('tour-leave')?.addEventListener('click', leaveTournament);
-    $('tour-start')?.addEventListener('click', () => socket.emit('start-tournament'));
-    $('tour-end')?.addEventListener('click', () => {
-      socket.emit('tournament-end');
-      leaveTournament();
-    });
+    if (isHost) {
+      const startBtn = $('tour-start');
+      const endBtn = $('tour-end');
+      // disable start while any live matches
+      if (state.liveMatches && state.liveMatches.length) {
+        if (startBtn) startBtn.disabled = true;
+      } else {
+        if (startBtn) startBtn.disabled = false;
+      }
+      startBtn?.addEventListener('click', () => socket.emit('start-tournament'));
+      endBtn?.addEventListener('click', () => {
+        socket.emit('start-tournament');
+        socket.emit('leave-tournament');
+      });
+    }
   }
 
   function renderMatchView(data) {
@@ -147,7 +159,7 @@
     matchBox.hidden = false;
     matchBox.innerHTML = `
       <div class="match-shell">
-        <div class="title-row"><strong>Match</strong><small>${data.players[0]} vs ${data.players[1]}</small></div>
+        <div class="title-row"><strong>Match</strong><small>${esc(data.players[0])} vs ${esc(data.players[1])}</small></div>
         <div class="meta">Ziel: ${data.targetWins} Siege</div>
         <div id="matchcode" class="room-code">${code}</div>
         <div id="result" class="result-box"></div>
@@ -179,13 +191,6 @@
 
   function refreshTournamentState() {
     socket.emit('list-public-tournaments', refreshTournaments);
-    socket.emit('tournament-state', state => {
-      if (!state) return;
-      renderLobby(state);
-      if (state.phase === 'running') {
-        socket.emit('tournament-match-join', state.liveMatches?.[0]?.id || null);
-      }
-    });
   }
 
   socket.on('public-tournaments', list => {
@@ -216,25 +221,20 @@
 
   socket.on('tournament-state', state => {
     if (!state) return;
-    if (!state.code) return;
-    if (state.phase !== 'running' && !inMatch) {
-      renderLobby(state);
-      return;
-    }
+    code = state.code;
+    // if running, still show lobby and leaderboard to participants
+    renderLobby(state);
     if (state.phase === 'running') {
-      renderLobby(state);
+      // host will receive live matches separately
     }
   });
 
   socket.on('tournament-match', data => {
     if (!data) return;
-    const matchBox = $('tournament-match');
-    if (matchBox) {
-      matchBox.hidden = false;
-      renderMatchView(data);
-      code = data.code;
-      screen('tournament');
-    }
+    // role can be 'host' or 'player'
+    renderMatchView(data);
+    code = data.code;
+    screen('tournament');
   });
 
   socket.on('tournament-round-result', d => {
@@ -243,16 +243,19 @@
   });
 
   socket.on('tournament-live-matches', list => {
-    if (role !== 'host') return;
-    const el = $('tournament-lobby');
-    if (!el) return;
-    if (!list || !list.length) {
-      el.querySelector('.leaderboard')?.insertAdjacentHTML('beforeend', '<div class="empty-state small">Keine laufenden Matches.</div>');
-      return;
-    }
-    const matches = list.map(m => `<div class="match-row">${m.players.join(' vs ')}</div>`).join('');
-    const place = el.querySelector('.leaderboard');
-    if (place) place.insertAdjacentHTML('beforeend', `<div class="match-list"><h4>Live Matches</h4>${matches}</div>`);
+    // host-only list
+    if (!list) return;
+    const hostBox = $('tournament-lobby');
+    if (!hostBox) return;
+    // append or update live matches panel
+    const existing = hostBox.querySelector('.match-list');
+    const html = `<div class="match-list"><h4>Live Matches</h4>${list.map(m => `<div class="match-row">${esc(m.players.join(' vs '))} <button class="btn tiny watch" data-match="${m.id}">Zuschauen</button></div>`).join('')}</div>`;
+    if (existing) existing.remove();
+    hostBox.querySelector('.leaderboard')?.insertAdjacentHTML('afterend', html);
+    hostBox.querySelectorAll('.watch').forEach(b => b.addEventListener('click', e => {
+      const id = b.dataset.match;
+      socket.emit('watch-match', id);
+    }));
   });
 
   socket.on('tournament-ended', data => {
@@ -292,7 +295,7 @@
     if (!name) return $('tournament-error').textContent = 'Bitte gib zuerst deinen Namen ein.';
     const targetWins = $('tournament-wins').value;
     const maxPlayers = $('tournament-size').value;
-    const isPublic = $('tournament-public').checked;
+    const isPublic = !!$('tournament-public')?.checked;
     socket.emit('create-tournament', { name, targetWins, maxPlayers, isPublic }, d => {
       if (d?.error) return $('tournament-error').textContent = d.error;
       role = 'host';
@@ -301,7 +304,8 @@
       $('tournament-lobby').hidden = false;
       $('tournament-match').hidden = true;
       screen('tournament');
-      socket.emit('tournament-state', state => renderLobby(state));
+      // request initial state
+      socket.emit('list-public-tournaments', refreshTournaments);
     });
   });
 

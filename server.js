@@ -140,7 +140,7 @@ function tournamentState(t) {
     targetWins: t.targetWins,
     maxPlayers: t.maxPlayers,
     players: [...t.players.values()].map(p => ({ name: p.name, points: p.points, inMatch: !!p.inMatch })),
-    liveMatches: t.liveMatches.map(m => ({ id: m.id, players: m.players.map(pid => t.players.get(pid)?.name || '—') }))
+    liveMatches: (t.liveMatches || []).map(m => ({ id: m.id, players: m.players.map(pid => t.players.get(pid)?.name || '—'), done: !!m.done }))
   };
 }
 
@@ -159,21 +159,31 @@ function resetTournamentMatchState(match) {
   }
 }
 
+function findMatchByPlayer(t, pid) {
+  if (!t.liveMatches) return null;
+  return t.liveMatches.find(m => m.players.includes(pid) && !m.done) || null;
+}
+
 function startTournamentRound(t) {
+  // only start when no live matches are running
+  if ((t.liveMatches || []).some(m => !m.done)) return;
+
   const ids = [...t.players.keys()];
   if (ids.length < 2) return;
+
+  // if odd number, give a bye (1 point) to a random player
+  if (ids.length % 2 !== 0) {
+    const bye = ids[Math.floor(Math.random() * ids.length)];
+    const p = t.players.get(bye);
+    if (p) p.points += 1;
+  }
 
   const shuffled = [...ids].sort(() => Math.random() - 0.5);
   const matches = [];
   for (let i = 0; i < shuffled.length; i += 2) {
     const a = shuffled[i];
     const b = shuffled[i + 1];
-    if (!b) {
-      const randomPick = ids[Math.floor(Math.random() * ids.length)];
-      const target = t.players.get(randomPick);
-      if (target) target.points += 1;
-      continue;
-    }
+    if (!b) continue; // bye handled above
     const match = {
       id: `${t.code}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
       players: [a, b],
@@ -185,13 +195,16 @@ function startTournamentRound(t) {
       phase: 'ready'
     };
     matches.push(match);
-    t.players.get(a).inMatch = true;
-    t.players.get(b).inMatch = true;
+    const pa = t.players.get(a);
+    const pb = t.players.get(b);
+    if (pa) pa.inMatch = true;
+    if (pb) pb.inMatch = true;
   }
 
   t.liveMatches = matches;
   t.phase = 'running';
 
+  // notify players about their matches
   matches.forEach(match => {
     const p1 = t.players.get(match.players[0]);
     const p2 = t.players.get(match.players[1]);
@@ -206,70 +219,68 @@ function startTournamentRound(t) {
     io.to(match.players[1]).emit('tournament-match', payload);
   });
 
+  // notify host about live matches list
+  if (t.hostId) io.to(t.hostId).emit('tournament-live-matches', t.liveMatches.map(m => ({ id: m.id, players: m.players.map(pid => t.players.get(pid)?.name || '—') })));
   io.to(t.code).emit('tournament-state', tournamentState(t));
-  io.to(t.hostId).emit('tournament-live-matches', t.liveMatches.map(m => ({ id: m.id, players: m.players.map(pid => t.players.get(pid)?.name || '—') })));
 }
 
-function finishTournamentMatch(t, match) {
+function finishTournamentMatch(t, match, forcedWinnerId = null) {
   if (match.done) return;
   match.done = true;
   const [aId, bId] = match.players;
   const a = t.players.get(aId);
   const b = t.players.get(bId);
-  if (!a || !b) return;
-
-  const aChoice = match.choice[aId];
-  const bChoice = match.choice[bId];
-  if (!aChoice || !bChoice) {
-    const winner = Math.random() > 0.5 ? aId : bId;
-    const loser = winner === aId ? bId : aId;
-    t.players.get(winner).points += 1;
-    t.players.get(loser).points += 0;
-    match.winnerId = winner;
-  } else {
-    const outcome = evaluateRound(aChoice, bChoice);
-    if (outcome === 'draw') {
-      a.points += 1;
-      b.points += 1;
-      match.winnerId = null;
-    } else if (outcome === 'a') {
-      a.points += 1;
-      match.winnerId = aId;
-    } else {
-      b.points += 1;
-      match.winnerId = bId;
+  if (!a || !b) {
+    // if one player missing, award other
+    const winner = a ? aId : b ? bId : null;
+    if (winner) {
+      const pw = t.players.get(winner);
+      if (pw) pw.points += 1;
     }
-  }
-
-  a.inMatch = false;
-  b.inMatch = false;
-  io.to(aId).emit('tournament-round-result', { winner: match.winnerId ? t.players.get(match.winnerId).name : 'UNENTSCHIEDEN' });
-  io.to(bId).emit('tournament-round-result', { winner: match.winnerId ? t.players.get(match.winnerId).name : 'UNENTSCHIEDEN' });
-
-  const remaining = t.liveMatches.filter(m => !m.done);
-  t.liveMatches = remaining;
-  if (!remaining.length) {
-    t.phase = 'lobby';
-    const ordered = sortLeaderboard(t);
-    t.players.forEach(p => { p.inMatch = false; });
-    io.to(t.code).emit('tournament-state', {
-      code: t.code,
-      phase: 'lobby',
-      hostName: t.hostName,
-      targetWins: t.targetWins,
-      maxPlayers: t.maxPlayers,
-      players: ordered.map(p => ({ name: p.name, points: p.points, inMatch: false })),
-      liveMatches: []
-    });
-    io.to(t.hostId).emit('tournament-live-matches', []);
+    // mark participants not in match
+    if (a) a.inMatch = false;
+    if (b) b.inMatch = false;
   } else {
-    io.to(t.hostId).emit('tournament-live-matches', t.liveMatches.map(m => ({ id: m.id, players: m.players.map(pid => t.players.get(pid)?.name || '—') })));
+    const aChoice = match.choice[aId];
+    const bChoice = match.choice[bId];
+    if (forcedWinnerId) {
+      t.players.get(forcedWinnerId).points += 1;
+      match.winnerId = forcedWinnerId;
+    } else if (!aChoice || !bChoice) {
+      // if missing choices treat as draw and no winner, but per spec if someone left opponent gets point
+      if (!aChoice && bChoice) { t.players.get(bId).points += 1; match.winnerId = bId; }
+      else if (!bChoice && aChoice) { t.players.get(aId).points += 1; match.winnerId = aId; }
+      else { a.points += 1; b.points += 1; match.winnerId = null; }
+    } else {
+      const outcome = evaluateRound(aChoice, bChoice);
+      if (outcome === 'draw') {
+        a.points += 1; b.points += 1; match.winnerId = null;
+      } else if (outcome === 'a') {
+        a.points += 1; match.winnerId = aId;
+      } else {
+        b.points += 1; match.winnerId = bId;
+      }
+    }
+    a.inMatch = false;
+    b.inMatch = false;
   }
-}
 
-function handleTournamentMatchChoice(t, matchId, socketId, choice) {
-  const tObj = tournaments.get(socketId && socketId.includes ? null : null);
-  const tournament = tournaments.get(tId); // placeholder
+  // notify participants with result
+  io.to(aId).emit('tournament-round-result', { winner: match.winnerId ? (t.players.get(match.winnerId)?.name || '—') : 'UNENTSCHIEDEN' });
+  io.to(bId).emit('tournament-round-result', { winner: match.winnerId ? (t.players.get(match.winnerId)?.name || '—') : 'UNENTSCHIEDEN' });
+
+  // update liveMatches
+  t.liveMatches = (t.liveMatches || []).filter(m => !m.done);
+
+  // update host live list and tournament state
+  if (t.hostId) io.to(t.hostId).emit('tournament-live-matches', t.liveMatches.map(m => ({ id: m.id, players: m.players.map(pid => t.players.get(pid)?.name || '—') })));
+  io.to(t.code).emit('tournament-state', tournamentState(t));
+
+  if (!t.liveMatches || t.liveMatches.length === 0) {
+    // round finished
+    t.phase = 'lobby';
+    io.to(t.code).emit('tournament-rounds-finished');
+  }
 }
 
 io.on('connection', socket => {
@@ -338,10 +349,10 @@ io.on('connection', socket => {
     if (socket.data.tournament && socket.data.matchId) {
       const t = tournaments.get(socket.data.tournament);
       if (!t) return;
-      const match = (t.liveMatches || []).find(m => m.id === socket.data.matchId);
+      const match = (t.liveMatches || []).find(x => x.id === socket.data.matchId && !x.done);
       if (!match || match.done || match.ready[socket.id] || match.phase !== 'ready') return;
       match.choice[socket.id] = choice;
-      io.to(t.code).emit('tournament-state', tournamentState(t));
+      io.to(socket.id).emit('tournament-match-choice', { choice });
       return;
     }
 
@@ -383,25 +394,25 @@ io.on('connection', socket => {
           const aChoice = match.choice[aId];
           const bChoice = match.choice[bId];
           if (!aChoice || !bChoice) {
-            io.to(match.players[0]).emit('round-result', { choices: [{ label: '—' }, { label: '—' }], draw: true, winner: '—' });
-            io.to(match.players[1]).emit('round-result', { choices: [{ label: '—' }, { label: '—' }], draw: true, winner: '—' });
-            finishTournamentMatch(t, match);
+            // if one left or didn't choose, award other
+            if (!aChoice && bChoice) finishTournamentMatch(t, match, bId);
+            else if (!bChoice && aChoice) finishTournamentMatch(t, match, aId);
+            else finishTournamentMatch(t, match, null);
             return;
           }
           const result = evaluateRound(aChoice, bChoice);
           const draw = result === 'draw';
-          let winnerName = null;
-          if (!draw) {
-            if (result === 'a') {
-              t.players.get(aId).points += 1;
-              winnerName = t.players.get(aId).name;
-            } else {
-              t.players.get(bId).points += 1;
-              winnerName = t.players.get(bId).name;
-            }
+          if (draw) {
+            // both get 1 point
+            t.players.get(aId).points += 1;
+            t.players.get(bId).points += 1;
+          } else if (result === 'a') {
+            t.players.get(aId).points += 1;
+            match.winnerId = aId;
+          } else {
+            t.players.get(bId).points += 1;
+            match.winnerId = bId;
           }
-          io.to(aId).emit('tournament-round-result', { winner: winnerName || 'UNENTSCHIEDEN' });
-          io.to(bId).emit('tournament-round-result', { winner: winnerName || 'UNENTSCHIEDEN' });
           finishTournamentMatch(t, match);
         }, 1000);
       }
@@ -441,6 +452,7 @@ io.on('connection', socket => {
   });
 
   socket.on('disconnect', () => {
+    // ROOM cleanup
     if (socket.data.room) {
       const room = rooms.get(socket.data.room);
       if (room) {
@@ -462,12 +474,24 @@ io.on('connection', socket => {
       }
     }
 
+    // TOURNAMENT cleanup
     if (socket.data.tournament) {
       const t = tournaments.get(socket.data.tournament);
       if (t) {
+        const wasHost = socket.id === t.hostId;
+        // if player was in an active match, award opponent point
+        const match = findMatchByPlayer(t, socket.id);
+        if (match && !match.done) {
+          const opponent = match.players.find(pid => pid !== socket.id);
+          if (opponent) finishTournamentMatch(t, match, opponent);
+        }
+
+        // remove player
         t.players.delete(socket.id);
-        if (socket.id === t.hostId) {
-          io.to(t.code).emit('tournament-ended', { players: sortLeaderboard(t), winner: t.hostName });
+
+        if (wasHost) {
+          // host left -> end tournament and bring everyone to home
+          io.to(t.code).emit('tournament-ended', { players: sortLeaderboard(t) });
           tournaments.delete(t.code);
           io.emit('public-tournaments', tournamentList());
         } else {
@@ -496,11 +520,11 @@ io.on('connection', socket => {
       maxPlayers: Math.min(60, Math.max(4, even)),
       isPublic: !!isPublic,
       phase: 'lobby',
-      players: new Map(),
+      players: new Map(), // host is NOT a player
       liveMatches: [],
       finished: false
     };
-    t.players.set(socket.id, { id: socket.id, name: safeName, points: 0, inMatch: false });
+    // host should not be added to players map - host watches only
     tournaments.set(code, t);
     socket.join(code);
     socket.data.tournament = code;
@@ -531,12 +555,20 @@ io.on('connection', socket => {
     const t = tournaments.get(code);
     if (!t) return;
     const isHost = socket.id === t.hostId;
+
+    // if player was in a match, award opponent
+    const match = findMatchByPlayer(t, socket.id);
+    if (match && !match.done) {
+      const opponent = match.players.find(pid => pid !== socket.id);
+      if (opponent) finishTournamentMatch(t, match, opponent);
+    }
+
     t.players.delete(socket.id);
     socket.leave(code);
     socket.data.tournament = null;
     socket.data.role = null;
     if (isHost) {
-      io.to(code).emit('tournament-ended', { players: sortLeaderboard(t), winner: t.hostName });
+      io.to(code).emit('tournament-ended', { players: sortLeaderboard(t) });
       tournaments.delete(code);
       io.emit('public-tournaments', tournamentList());
       return;
@@ -550,13 +582,10 @@ io.on('connection', socket => {
     const t = tournaments.get(code);
     if (!t) return;
     if (socket.id !== t.hostId) return;
-    if (t.phase === 'running') return;
+    // can't start if there are live matches
+    if ((t.liveMatches || []).some(m => !m.done)) return;
     if (t.players.size < 2) return;
-    if (t.players.size % 2 !== 0) {
-      const next = [...t.players.keys()][Math.floor(Math.random() * t.players.size)];
-      const target = t.players.get(next);
-      if (target) target.points += 1;
-    }
+    // if odd players, give a bye handled in startTournamentRound
     startTournamentRound(t);
   });
 
@@ -566,15 +595,50 @@ io.on('connection', socket => {
     const match = (t.liveMatches || []).find(m => m.id === matchId);
     if (!match) return;
     socket.data.matchId = matchId;
-    if (match.players.includes(socket.id)) {
-      io.to(socket.id).emit('tournament-match', {
+
+    // if host wants to watch, allow it
+    if (socket.id === t.hostId) {
+      const payload = {
         code: t.code,
         matchId: match.id,
         targetWins: t.targetWins,
         players: match.players.map(pid => t.players.get(pid)?.name || '—'),
-        role: 'player'
-      });
+        role: 'host'
+      };
+      io.to(socket.id).emit('tournament-match', payload);
+      return;
     }
+
+    // if player joins, only allow if they are participant
+    if (match.players.includes(socket.id)) {
+      const p1 = t.players.get(match.players[0]);
+      const p2 = t.players.get(match.players[1]);
+      const payload = {
+        code: t.code,
+        matchId: match.id,
+        targetWins: t.targetWins,
+        players: [p1.name, p2.name],
+        role: 'player'
+      };
+      io.to(socket.id).emit('tournament-match', payload);
+    }
+  });
+
+  socket.on('watch-match', (matchId) => {
+    // host-only watch shortcut
+    const t = tournaments.get(socket.data.tournament);
+    if (!t) return;
+    if (socket.id !== t.hostId) return;
+    const match = (t.liveMatches || []).find(m => m.id === matchId);
+    if (!match) return;
+    const payload = {
+      code: t.code,
+      matchId: match.id,
+      targetWins: t.targetWins,
+      players: match.players.map(pid => t.players.get(pid)?.name || '—'),
+      role: 'host'
+    };
+    io.to(socket.id).emit('tournament-match', payload);
   });
 
   socket.on('player-left-ensure', () => {
