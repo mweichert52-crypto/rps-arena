@@ -3,19 +3,244 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Deleted</title>
-    <style>
-      html, body { margin: 0; height: 100%; background: #111827; color: #f9fafb; font-family: Arial, sans-serif; }
-      body { display: grid; place-items: center; }
-      .box { text-align: center; padding: 2rem; }
-      h1 { font-size: 2rem; margin: 0 0 .75rem; }
-      p { margin: 0; color: #d1d5db; }
-    </style>
+    <title>RPS Arena</title>
+    <link rel="stylesheet" href="/style.css" />
   </head>
-  <body>
-    <div class="box">
-      <h1>Deleted</h1>
-      <p>This site has been removed.</p>
-    </div>
+  <body data-theme="void">
+    <main id="app">
+      <section class="screen active" id="home">
+        <div class="bg-orb orb-a"></div>
+        <div class="bg-orb orb-b"></div>
+
+        <div class="topbar panel">
+          <div class="brand-wrap">
+            <div class="brand-mark">RPS</div>
+            <div class="brand-text">ARENA</div>
+          </div>
+
+          <div class="theme-switcher" aria-label="Farbtheme">
+            <button class="theme-option active" data-theme="void" type="button">Void</button>
+            <button class="theme-option" data-theme="sunset" type="button">Sunset</button>
+            <button class="theme-option" data-theme="aurora" type="button">Aurora</button>
+            <button class="theme-option" data-theme="magma" type="button">Magma</button>
+          </div>
+        </div>
+
+        <div class="hero panel">
+          <div class="eyebrow">LIVE ARENA</div>
+          <h1>Rock • Paper • Scissors</h1>
+          <p>Erstelle eine Arena, kämpfe in einem Match oder starte ein Turnier mit Freunden.</p>
+          <div class="home-actions">
+            <button class="btn primary" data-screen="play">Spiel starten</button>
+            <button class="btn" data-screen="watch">Zuschauen</button>
+          </div>
+        </div>
+
+        <button id="tournament-open" class="tournament-home-btn" type="button">
+          <span>🏆</span>
+          <span>Turnier</span>
+        </button>
+      </section>
+
+      <section class="screen" id="play">
+        <button class="back" data-screen="home">← Zurück</button>
+        <div class="panel form-panel">
+          <div class="eyebrow">SPIELER-BEREICH</div>
+          <h2>Bereit für den Kampf?</h2>
+          <label>
+            Dein Name
+            <input id="player-name" maxlength="20" placeholder="z. B. Alex" />
+          </label>
+          <label>
+            Zieleintrag
+            <select id="target-wins">
+              <option value="1">1 Sieg</option>
+              <option value="3" selected>3 Siege</option>
+              <option value="5">5 Siege</option>
+            </select>
+          </label>
+          <label class="toggle-row">
+            <span>Öffentlich</span>
+            <input id="lobby-public" type="checkbox" checked />
+          </label>
+
+          <div class="row split">
+            <button id="create" class="btn primary full">Arena erstellen</button>
+          </div>
+
+          <div class="row join-row">
+            <input id="join-code" maxlength="6" placeholder="RAUMCODE" />
+            <button id="join" class="btn">Beitreten</button>
+          </div>
+
+          <p id="play-error" class="error"></p>
+        </div>
+      </section>
+
+      <section class="screen" id="watch">
+        <button class="back" data-screen="home">← Zurück</button>
+        <div class="panel narrow-panel">
+          <div class="eyebrow">ZUSCHAUER-MODUS</div>
+          <h2>Sei live dabei.</h2>
+          <label>
+            Dein Name
+            <input id="watch-name" maxlength="20" placeholder="z. B. Zuschauer" />
+          </label>
+          <label>
+            Raumcode
+            <input id="watch-code" maxlength="6" placeholder="RAUMCODE" />
+          </label>
+          <button id="watch-btn" class="btn primary full">Zuschauen</button>
+          <p id="watch-error" class="error"></p>
+          <div id="watch-lobbies"></div>
+        </div>
+      </section>
+
+      <section class="screen" id="game">
+        <header class="game-header panel">
+          <div class="brand">
+            <span class="brand-mark">RPS</span>
+            <span class="brand-text">ARENA</span>
+          </div>
+          <div class="room-pill">
+            <small>DU SPIELST IN</small>
+            <strong id="room-code">—</strong>
+            <button id="copy" class="mini-btn" type="button">CODE KOPIEREN</button>
+          </div>
+        </header>
+
+        <div class="game-wrap panel">
+          <div class="status-row">
+            <div class="live-pill">LIVE <span id="spectators">0</span></div>
+            <div id="status" class="status-text">Verbinde…</div>
+          </div>
+
+          <div class="match-rule" id="match-rule">Ziel: 3 Siege</div>
+
+          <div class="scoreboard">
+            <div class="player-card">
+              <small>SPIELER 01</small>
+              <strong id="name-0">—</strong>
+              <div class="score" id="score-0">0</div>
+              <div class="score-label">PUNKTE</div>
+              <div class="ready-dot" data-ready-dot="0"></div>
+            </div>
+            <div class="versus">VS</div>
+            <div class="player-card">
+              <small>SPIELER 02</small>
+              <strong id="name-1">—</strong>
+              <div class="score" id="score-1">0</div>
+              <div class="score-label">PUNKTE</div>
+              <div class="ready-dot" data-ready-dot="1"></div>
+            </div>
+          </div>
+
+          <div id="result" class="result-box"></div>
+
+          <div id="choices" class="choices">
+            <button data-choice="rock" type="button">
+              <span>🪨</span>
+              <b>Stein</b>
+              <small>ROCK</small>
+            </button>
+            <button data-choice="paper" type="button">
+              <span>📄</span>
+              <b>Papier</b>
+              <small>PAPER</small>
+            </button>
+            <button data-choice="scissors" type="button">
+              <span>✂️</span>
+              <b>Schere</b>
+              <small>SCISSORS</small>
+            </button>
+          </div>
+
+          <button id="ready-btn" class="btn primary ready-btn" type="button">Bereit →</button>
+          <div id="countdown" class="countdown"></div>
+          <div id="winner" class="winner"></div>
+        </div>
+      </section>
+
+      <section class="screen" id="tournament">
+        <button class="back" data-screen="home">← Zurück</button>
+        <div class="panel tournament-panel">
+          <div class="eyebrow">TURNIER-MODUS</div>
+          <h2>🏆 Turnier erstellen & beitreten</h2>
+
+          <div id="tournament-setup">
+            <label>
+              Dein Name
+              <input id="tournament-name" maxlength="20" placeholder="z. B. Alex" />
+            </label>
+            <label>
+              Ziel-Siege
+              <select id="tournament-wins">
+                <option value="1">1</option>
+                <option value="3" selected>3</option>
+                <option value="5">5</option>
+              </select>
+            </label>
+            <label>
+              Teilnehmertyp
+              <select id="tournament-size">
+                <option value="4">4</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+                <option value="10">10</option>
+                <option value="12">12</option>
+                <option value="14">14</option>
+                <option value="16">16</option>
+                <option value="18">18</option>
+                <option value="20">20</option>
+                <option value="22">22</option>
+                <option value="24">24</option>
+                <option value="26">26</option>
+                <option value="28">28</option>
+                <option value="30">30</option>
+                <option value="32">32</option>
+                <option value="34">34</option>
+                <option value="36">36</option>
+                <option value="38">38</option>
+                <option value="40">40</option>
+                <option value="42">42</option>
+                <option value="44">44</option>
+                <option value="46">46</option>
+                <option value="48">48</option>
+                <option value="50">50</option>
+                <option value="52">52</option>
+                <option value="54">54</option>
+                <option value="56">56</option>
+                <option value="58">58</option>
+                <option value="60">60</option>
+              </select>
+            </label>
+            <label class="toggle-row">
+              <span>Öffentlich</span>
+              <input id="tournament-public" type="checkbox" checked />
+            </label>
+
+            <div class="tour-actions">
+              <button id="tournament-host" class="btn primary">Turnier hosten</button>
+              <button id="tournament-refresh" class="btn">Aktualisieren</button>
+            </div>
+
+            <div class="join-row">
+              <input id="tournament-code" maxlength="6" placeholder="TURNIERCODE" />
+              <button id="tournament-join" class="btn">Joinen</button>
+            </div>
+
+            <p id="tournament-error" class="error"></p>
+          </div>
+
+          <div id="tournament-list" class="list-panel"></div>
+          <div id="tournament-lobby" class="list-panel hidden"></div>
+          <div id="tournament-match" class="list-panel hidden"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+    <script src="/tournament.js"></script>
   </body>
 </html>

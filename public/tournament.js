@@ -1,107 +1,320 @@
 (() => {
-  const $ = id => document.getElementById(id);
   const socket = window.__rpsSocket || (window.__rpsSocket = io());
-  let role = null;
+  const $ = id => document.getElementById(id);
   let code = null;
+  let role = null;
   let inMatch = false;
 
-  // Inject a nicer tournament button into the home screen if it's not already present
-  function injectTournamentButton() {
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const screen = id => {
+    document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
+    $(id)?.classList.add('active');
+  };
+
+  function sizes() {
+    const select = $('tournament-size');
+    if (!select) return;
+    if (!select.dataset.ready) {
+      for (let n = 4; n <= 60; n += 2) {
+        const option = new Option(`${n} Spieler`, String(n));
+        select.add(option);
+      }
+      select.dataset.ready = '1';
+    }
+    if (!select.value) select.value = '8';
+  }
+
+  function ensureTournamentButton() {
     if ($('tournament-open')) return;
-    const home = document.querySelector('#home .panel') || document.querySelector('#home');
+    const home = document.querySelector('#home .hero') || document.querySelector('#home');
     if (!home) return;
     const btn = document.createElement('button');
     btn.id = 'tournament-open';
-    btn.className = 'btn tournament-home-btn';
+    btn.className = 'tournament-home-btn';
     btn.type = 'button';
-    btn.innerHTML = `<span>🏆</span><span>Turnier</span>`;
-    // insert near top of the home panel
-    home.insertBefore(btn, home.firstElementChild);
-    btn.addEventListener('click', () => { sizes(); screen('tournament'); refresh(); });
+    btn.innerHTML = '<span>🏆</span><span>Turnier</span>';
+    home.appendChild(btn);
+    btn.addEventListener('click', () => {
+      sizes();
+      screen('tournament');
+      refreshTournaments();
+    });
   }
 
-  // Styles for the tournament button + leave button polish
-  const css = document.createElement('style');
-  css.textContent = `
-    .tournament-home-btn{position:fixed;right:28px;bottom:28px;z-index:8;min-width:154px;height:54px;font-size:15px;font-weight:800;letter-spacing:.2px;border-radius:12px;background:linear-gradient(90deg,var(--violet),var(--pink));color:#fff;border:0;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 30px rgba(139,92,246,.16)}
-    .tournament-home-btn span{display:inline-block}
-    .tour-leave{margin-top:18px!important;height:48px!important;min-height:48px!important;border:1px solid rgba(255,99,130,.18)!important;background:linear-gradient(135deg,rgba(255,70,90,.12),rgba(255,30,70,.06))!important;color:#ffb3bf!important;box-shadow:0 6px 18px rgba(255,70,90,.12)!important;font:800 13px 'JetBrains Mono',monospace!important;letter-spacing:1px;border-radius:10px}
-    .tour-leave:hover{background:linear-gradient(135deg,#ff6b83,#c92b4b)!important;color:#fff!important;border-color:#ffb3bf!important;box-shadow:0 12px 30px rgba(255,70,90,.28)!important;transform:translateY(-2px)}
-    .tour-code button{margin-left:14px}.tour-card{min-height:66px}.tour-card small{line-height:1.4}.tour-player{min-height:40px;align-items:center}.tour-rank{min-height:45px}.tour-actions .btn:disabled{opacity:.42;filter:grayscale(.6);cursor:not-allowed}.tour-state-note{margin:14px 0;color:var(--muted);text-align:center}.tour-match-row{gap:14px}.tour-match-row small{margin-left:auto;color:var(--theme-accent)}
-    @media(max-width:650px){.tournament-home-btn{right:16px;bottom:16px;width:calc(100% - 32px)}.tour-code{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.tour-code button{margin-left:0}}
-  `;
-  document.head.appendChild(css);
+  function refreshTournaments() {
+    socket.emit('list-public-tournaments', list => {
+      const el = $('tournament-list');
+      if (!el) return;
+      if (!list || !list.length) {
+        el.innerHTML = '<div class="empty-state">Keine offenen Turniere.</div>';
+        return;
+      }
+      el.innerHTML = list.map(t => `
+        <div class="tournament-card">
+          <div class="title-row"><strong>${esc(t.code)}</strong><small>${t.players}/${t.maxPlayers}</small></div>
+          <div class="meta">${esc(t.hostName)} · Ziel: ${t.targetWins}</div>
+          <button class="btn tiny" data-tourney-join="${t.code}" type="button">Joinen</button>
+        </div>
+      `).join('');
+      el.querySelectorAll('[data-tourney-join]').forEach(btn => {
+        btn.onclick = () => {
+          const name = $('tournament-name').value.trim();
+          if (!name) return $('tournament-error').textContent = 'Bitte gib zuerst deinen Namen ein.';
+          socket.emit('join-tournament', { name, code: btn.dataset.tourneyJoin }, d => {
+            if (d?.error) return $('tournament-error').textContent = d.error;
+            enterTournament(d, 'player');
+          });
+        };
+      });
+    });
+  }
 
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const screen = id => { document.querySelectorAll('.screen').forEach(x => x.classList.remove('active')); $(id)?.classList.add('active'); };
-  const error = t => { if ($('tournament-error')) $('tournament-error').textContent = t || ''; };
+  function enterTournament(data, playerRole) {
+    role = playerRole;
+    code = data.code;
+    inMatch = false;
+    $('tournament-setup').hidden = true;
+    $('tournament-lobby').hidden = false;
+    $('tournament-match').hidden = true;
+    screen('tournament');
+    refreshTournamentState();
+  }
 
-  function sizes() { const s = $('tournament-size'); if (s && !s.options.length) for (let n = 4; n <= 60; n += 2) s.add(new Option(`${n} Spieler`, n)); if (s && !s.value) s.value = '8'; }
-  function refresh() { socket.emit('list-public-tournaments', list); }
-  function list(items) { const e = $('tournament-list'); if (!e) return; if (!items?.length) { e.innerHTML = '<p class="muted">Keine offenen Turniere.</p>'; return } e.innerHTML = items.map(t => `<div class="tour-card"><div><strong>${esc(t.host)}</strong><small>${t.players}/${t.maxPlayers} Spieler · ${t.targetWins} Sieg${t.targetWins === 1 ? '' : 'e'} pro Duell</small></div><button class="btn primary" data-code="${esc(t.code)}">Beitreten</button></div>`).join(''); e.querySelectorAll('[data-code]').forEach(b => b.onclick = () => join($('tournament-name').value.trim(), b.dataset.code)); }
-
-  function join(name, c) { if (!name) return error('Bitte gib zuerst deinen Namen ein.'); socket.emit('join-tournament', { name, code: c }, d => d?.error ? error(d.error) : enter(d, 'player')); }
-
-  function enter(d, r) { role = r; code = d.code; inMatch = false; $('tournament-setup').hidden = true; $('tournament-lobby').hidden = false; $('tournament-match').hidden = true; screen('tournament'); }
-
-  function leave() {
+  function leaveTournament() {
     if (code) {
       try { socket.emit('leave-tournament'); } catch (e) {}
-      try { socket.emit('player-left-ensure'); } catch (e) {}
     }
-    code = null; role = null; inMatch = false; $('tournament-setup').hidden = false; $('tournament-lobby').hidden = true; $('tournament-match').hidden = true; screen('home');
+    code = null;
+    role = null;
+    inMatch = false;
+    $('tournament-setup').hidden = false;
+    $('tournament-lobby').hidden = true;
+    $('tournament-match').hidden = true;
+    screen('home');
   }
 
-  function ranks(ps) { return (ps || []).map((p, i) => `<div class="tour-rank"><span class="place">${p.rank || i + 1}</span><strong>${esc(p.name)}</strong><span class="points">${p.points || 0} P</span></div>`).join('') || '<p class="muted">Noch keine Teilnehmer.</p>' }
-
-  function render(s) { if (inMatch) return; const host = role === 'host', players = s.players || [], ready = s.phase === 'ready' || s.phase === 'lobby'; $('tournament-lobby').hidden = false; $('tournament-lobby').innerHTML = `<div class="tour-lobby"><h3><span>TURNIER-LOBBY</span><span>${players.length}/${s.maxPlayers || '—'}</span></h3><div class="tour-code">${esc(s.code || code)} <button class="btn ghost" id="tour-copy">Kopieren</button></div><p class="tour-state-note">${esc(s.message || (s.phase === 'running' ? 'Runde läuft – warte, bis alle Matches beendet sind.' : 'Warte auf Teilnehmer.'))}</p><div class="tour-players">${players.map(p => `<div class="tour-player"><span>${esc(p.name)}</span><b>${p.points || 0}</b></div>`).join('') || '<span class="muted">Noch keine Teilnehmer.</span>'}</div>${host ? `<div class="tour-actions"><button class="btn primary" id="tour-start" ${ready && players.length >= 2 ? '' : 'disabled'}>${s.phase === 'running' ? 'Runde läuft' : 'Nächste Runde starten'}</button><button class="btn ghost" id="tour-end" ${s.phase === 'ready' ? '' : 'disabled'}>Turnier beenden</button></div>` : ''}<button class="btn tour-leave full" id="tour-leave">TURNIER VERLASSEN</button></div><div class="tour-board"><h3>Leaderboard</h3><div>${ranks(players)}</div></div>${host && s.phase === 'running' ? `<div class="tour-board tour-match-list"><h3>Laufende Matches</h3>${(s.matches || []).map(m => `<div class="tour-match-row"><span>${m.names.map(esc).join(' vs ')}</span><small>${m.done ? 'fertig' : 'läuft'}</small></div>`).join('') || '<p class="muted">Keine laufenden Matches.</p>'}</div>` : '' }`;
-    $('tour-copy').onclick = () => navigator.clipboard?.writeText(s.code || code);
-    $('tour-leave').onclick = leave;
-    if (host) { $('tour-start').onclick = () => socket.emit('start-tournament'); $('tour-end').onclick = () => socket.emit('end-tournament'); }
+  function renderLeaderboard(players) {
+    return (players || []).map((p, i) => `
+      <div class="leader-row">
+        <span class="place">${i + 1}</span>
+        <strong>${esc(p.name)}</strong>
+        <span class="points">${p.points || 0} P</span>
+      </div>
+    `).join('');
   }
 
-  function bindMatch() {
-    document.querySelectorAll('#choices [data-choice]').forEach(b => b.onclick = () => { window.__tourChoice = b.dataset.choice; socket.emit('choose', b.dataset.choice); document.querySelectorAll('#choices [data-choice]').forEach(x => x.classList.toggle('selected', x === b)) });
-    $('ready-btn').onclick = () => { if (!window.__tourChoice) { $('status').textContent = 'Wähle zuerst Stein, Papier oder Schere.'; return } socket.emit('ready') };
-    const old = $('game-leave'); if (old) old.remove(); const b = document.createElement('button'); b.id = 'game-leave'; b.className = 'game-leave tour-leave'; b.textContent = 'TURNIER VERLASSEN'; b.onclick = leave; $('game').appendChild(b);
+  function renderLobby(state) {
+    if (!state) return;
+    const isHost = role === 'host';
+    const box = $('tournament-lobby');
+    if (!box) return;
+    box.hidden = false;
+    box.innerHTML = `
+      <div class="tournament-lobby-box">
+        <div class="title-row">
+          <strong>Turnier ${state.code}</strong>
+          <small>${state.players.length}/${state.maxPlayers}</small>
+        </div>
+        <div class="meta">Host: ${esc(state.hostName)} · Ziel: ${state.targetWins}</div>
+        <div class="lobby-list">
+          ${(state.players || []).map(p => `<div class="player-row">${esc(p.name)}${p.inMatch ? ' <span class="badge">in Match</span>' : ''}</div>`).join('')}
+        </div>
+        <div class="tournament-actions">
+          ${isHost ? '<button id="tour-start" class="btn primary" type="button">Starten</button>' : ''}
+          ${isHost ? '<button id="tour-end" class="btn danger" type="button">Turnier beenden</button>' : ''}
+          <button id="tour-leave" class="btn" type="button">Verlassen</button>
+        </div>
+        <div class="leaderboard">
+          <h4>Leaderboard</h4>
+          ${renderLeaderboard(state.players)}
+        </div>
+      </div>
+    `;
+
+    $('tour-leave')?.addEventListener('click', leaveTournament);
+    $('tour-start')?.addEventListener('click', () => socket.emit('start-tournament'));
+    $('tour-end')?.addEventListener('click', () => {
+      socket.emit('tournament-end');
+      leaveTournament();
+    });
   }
 
-  // Make sure the tournament-public switch defaults to ON if the form doesn't include one
-  function detectPublicSetting() {
-    const tp = $('tournament-public');
-    if (tp) return tp.checked;
-    const lp = $('lobby-public');
-    if (lp) return lp.checked;
-    return true;
+  function renderMatchView(data) {
+    if (!data) return;
+    inMatch = true;
+    const matchBox = $('tournament-match');
+    if (!matchBox) return;
+    matchBox.hidden = false;
+    matchBox.innerHTML = `
+      <div class="match-shell">
+        <div class="title-row"><strong>Match</strong><small>${data.players[0]} vs ${data.players[1]}</small></div>
+        <div class="meta">Ziel: ${data.targetWins} Siege</div>
+        <div id="matchcode" class="room-code">${code}</div>
+        <div id="result" class="result-box"></div>
+        <div id="choices" class="choices">
+          <button data-choice="rock" type="button"><span>🪨</span><b>Stein</b></button>
+          <button data-choice="paper" type="button"><span>📄</span><b>Papier</b></button>
+          <button data-choice="scissors" type="button"><span>✂️</span><b>Schere</b></button>
+        </div>
+        <button id="ready-btn" class="btn primary" type="button">Bereit →</button>
+        <div id="countdown" class="countdown"></div>
+      </div>
+    `;
+
+    document.querySelectorAll('#tournament-match [data-choice]').forEach(btn => {
+      btn.onclick = () => {
+        if (btn.disabled) return;
+        document.querySelectorAll('#tournament-match [data-choice]').forEach(x => x.classList.remove('selected'));
+        btn.classList.add('selected');
+        socket.emit('choose', btn.dataset.choice);
+      };
+    });
+
+    $('tournament-match')?.querySelector('#ready-btn')?.addEventListener('click', () => {
+      socket.emit('ready');
+      document.querySelectorAll('#tournament-match [data-choice]').forEach(x => x.disabled = true);
+      $('tournament-match').querySelector('#ready-btn').disabled = true;
+    });
   }
 
-  // graceful notify to server on unload
-  window.addEventListener('beforeunload', () => {
-    if (!code) return;
-    try { socket.emit('player-left-ensure'); } catch (e) {}
-    try { socket.emit('leave-tournament'); } catch (e) {}
+  function refreshTournamentState() {
+    socket.emit('list-public-tournaments', refreshTournaments);
+    socket.emit('tournament-state', state => {
+      if (!state) return;
+      renderLobby(state);
+      if (state.phase === 'running') {
+        socket.emit('tournament-match-join', state.liveMatches?.[0]?.id || null);
+      }
+    });
+  }
+
+  socket.on('public-tournaments', list => {
+    const el = $('tournament-list');
+    if (!el) return;
+    if (!list || !list.length) {
+      el.innerHTML = '<div class="empty-state">Keine offenen Turniere.</div>';
+      return;
+    }
+    el.innerHTML = list.map(t => `
+      <div class="tournament-card">
+        <div class="title-row"><strong>${esc(t.code)}</strong><small>${t.players}/${t.maxPlayers}</small></div>
+        <div class="meta">${esc(t.hostName)} · Ziel: ${t.targetWins}</div>
+        <button class="btn tiny" data-tourney-join="${t.code}" type="button">Joinen</button>
+      </div>
+    `).join('');
+    el.querySelectorAll('[data-tourney-join]').forEach(btn => {
+      btn.onclick = () => {
+        const name = $('tournament-name').value.trim();
+        if (!name) return $('tournament-error').textContent = 'Bitte gib zuerst deinen Namen ein.';
+        socket.emit('join-tournament', { name, code: btn.dataset.tourneyJoin }, d => {
+          if (d?.error) return $('tournament-error').textContent = d.error;
+          enterTournament(d, 'player');
+        });
+      };
+    });
   });
 
-  socket.on('public-tournaments', list);
-  socket.on('tournament-state', render);
-  socket.on('tournament-match', m => {
-    inMatch = true; window.__tourChoice = null; screen('game'); $('room-code').textContent = code; $('match-rule').textContent = `Turnierduell · Ziel: ${m.targetWins || 3} Siege`; $('name-0').textContent = m.players[0]; $('name-1').textContent = m.players[1]; $('score-0').textContent = '0'; $('score-1').textContent = '0'; $('result').innerHTML = ''; $('status').textContent = 'Wähle deine Hand und drücke Bereit.'; $('choices').style.display = ''; $('ready-btn').style.display = ''; $('ready-btn').disabled = false; bindMatch();
+  socket.on('tournament-state', state => {
+    if (!state) return;
+    if (!state.code) return;
+    if (state.phase !== 'running' && !inMatch) {
+      renderLobby(state);
+      return;
+    }
+    if (state.phase === 'running') {
+      renderLobby(state);
+    }
   });
 
-  socket.on('tournament-round-result', d => { $('result').innerHTML = `<div class="result-card"><div class="result-winner">${esc(d.winner)}${d.reason ? ' · ' + esc(d.reason) : ''}</div><div class="result-score">${d.points?.[0] || 0} : ${d.points?.[1] || 0}</div></div>`; setTimeout(() => { inMatch = false; screen('tournament') }, 1800) });
-  socket.on('tournament-ended', d => { inMatch = false; screen('tournament'); $('tournament-lobby').hidden = false; $('tournament-lobby').innerHTML = `<div class="tour-lobby"><h2>Das Turnier ist beendet!</h2><p class="tour-state-note">Auswertung folgt!</p><div class="tour-podium">${(d.players || []).slice(0, 3).map((p, i) => `<div class="podium-place ${['first', 'second', 'third'][i]}"><b>${i + 1}. Platz</b><strong>${esc(p.name)}</strong><small>${p.points} Punkte</small></div>`).join('')}</div><div class="tour-board"><h3>Leaderboard</h3><div>${ranks(d.players)}</div></div><button class="btn tour-leave full" id="tour-leave">ZURÜCK ZUM HAUPTMENÜ</button></div>`; $('tour-leave').onclick = leave });
-  socket.on('room-closed', () => { if (code) leave(); });
+  socket.on('tournament-match', data => {
+    if (!data) return;
+    const matchBox = $('tournament-match');
+    if (matchBox) {
+      matchBox.hidden = false;
+      renderMatchView(data);
+      code = data.code;
+      screen('tournament');
+    }
+  });
 
-  // event bindings
-  injectTournamentButton();
-  $('tournament-open')?.addEventListener('click', () => { sizes(); screen('tournament'); refresh(); });
-  $('tournament-refresh')?.addEventListener('click', refresh);
+  socket.on('tournament-round-result', d => {
+    const resultBox = $('tournament-match')?.querySelector('#result');
+    if (resultBox) resultBox.innerHTML = `<div class="result-card"><div class="result-winner">${esc(d.winner || 'UNENTSCHIEDEN')}</div></div>`;
+  });
+
+  socket.on('tournament-live-matches', list => {
+    if (role !== 'host') return;
+    const el = $('tournament-lobby');
+    if (!el) return;
+    if (!list || !list.length) {
+      el.querySelector('.leaderboard')?.insertAdjacentHTML('beforeend', '<div class="empty-state small">Keine laufenden Matches.</div>');
+      return;
+    }
+    const matches = list.map(m => `<div class="match-row">${m.players.join(' vs ')}</div>`).join('');
+    const place = el.querySelector('.leaderboard');
+    if (place) place.insertAdjacentHTML('beforeend', `<div class="match-list"><h4>Live Matches</h4>${matches}</div>`);
+  });
+
+  socket.on('tournament-ended', data => {
+    const box = $('tournament-lobby');
+    if (!box) return;
+    box.hidden = false;
+    box.innerHTML = `
+      <div class="podium-wrap">
+        <div class="eyebrow">TURNIER BEENDET</div>
+        <h3>Das Turnier ist beendet!</h3>
+        <div class="podium">
+          ${(data.players || []).slice(0, 3).map((p, i) => `
+            <div class="podium-item place-${i + 1}">
+              <strong>${i + 1}. ${esc(p.name)}</strong>
+              <small>${p.points || 0} Punkte</small>
+            </div>
+          `).join('')}
+        </div>
+        <div class="leaderboard full-list">
+          <h4>Leaderboard</h4>
+          ${renderLeaderboard(data.players || [])}
+        </div>
+      </div>
+    `;
+    code = null;
+    role = null;
+  });
+
+  socket.on('room-closed', () => {
+    if (code) leaveTournament();
+  });
+
+  ensureTournamentButton();
+  sizes();
   $('tournament-host')?.addEventListener('click', () => {
     const name = $('tournament-name').value.trim();
-    if (!name) return error('Bitte gib zuerst deinen Namen ein.');
-    const isPublic = detectPublicSetting();
-    socket.emit('create-tournament', { name, targetWins: $('tournament-wins').value, maxPlayers: $('tournament-size').value, isPublic }, d => d?.error ? error(d.error) : enter(d, 'host'));
+    if (!name) return $('tournament-error').textContent = 'Bitte gib zuerst deinen Namen ein.';
+    const targetWins = $('tournament-wins').value;
+    const maxPlayers = $('tournament-size').value;
+    const isPublic = $('tournament-public').checked;
+    socket.emit('create-tournament', { name, targetWins, maxPlayers, isPublic }, d => {
+      if (d?.error) return $('tournament-error').textContent = d.error;
+      role = 'host';
+      code = d.code;
+      $('tournament-setup').hidden = true;
+      $('tournament-lobby').hidden = false;
+      $('tournament-match').hidden = true;
+      screen('tournament');
+      socket.emit('tournament-state', state => renderLobby(state));
+    });
   });
-  $('tournament-join')?.addEventListener('click', () => join($('tournament-name').value.trim(), $('tournament-code').value.trim()));
-  sizes(); socket.on('connect', refresh);
+
+  $('tournament-join')?.addEventListener('click', () => {
+    const name = $('tournament-name').value.trim();
+    const codeInput = $('tournament-code').value.trim();
+    if (!name) return $('tournament-error').textContent = 'Bitte gib zuerst deinen Namen ein.';
+    if (!codeInput) return $('tournament-error').textContent = 'Bitte gib einen Turniercode ein.';
+    socket.emit('join-tournament', { name, code: codeInput }, d => {
+      if (d?.error) return $('tournament-error').textContent = d.error;
+      enterTournament(d, 'player');
+    });
+  });
+
+  $('tournament-refresh')?.addEventListener('click', refreshTournaments);
 })();
