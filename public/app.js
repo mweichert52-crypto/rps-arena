@@ -1,5 +1,5 @@
 // Main frontend app glue for RPS Arena
-// Rewritten to ensure back buttons, theme buttons, and play/watch flows work reliably.
+// Reworked handling for joining lobbies, ready flow, spectator UI and countdown stabilization.
 const socket = window.__rpsSocket || (window.__rpsSocket = io());
 let role = null;
 let selected = null;
@@ -22,7 +22,7 @@ document.addEventListener('click', (e) => {
   if (target) show(target);
 });
 
-// theme buttons (color selection) - work even if added later
+// theme buttons (color selection)
 function initThemeButtons() {
   const saved = localStorage.getItem('rps-theme') || 'void';
   document.body.dataset.theme = saved;
@@ -51,16 +51,21 @@ function renderLobbies(kind, rooms = []) {
   const box = $(kind === 'player' ? 'play-lobbies' : 'watch-lobbies');
   if (!box) return;
   const list = box.querySelector('.lobby-list');
-  const available = rooms.filter(r => r.players < 2 || r.spectatorCount >= 0);
+  const available = (rooms || []).filter(Boolean);
   if (!available.length) {
     list.innerHTML = '<p class="muted">Keine offenen Lobbies.</p>';
     return;
   }
-  list.innerHTML = available.map(r => `<div class="lobby"><strong>${r.code}</strong><small>${r.players.length} Spieler</small><div class="actions"><button class="btn" data-join="${r.code}" data-kind="${kind}">${kind==='player'?'Beitreten':'Zuschauen'}</button></div></div>`).join('');
+  list.innerHTML = available.map(r => {
+    const playerCount = (r.players && Array.isArray(r.players)) ? r.players.filter(Boolean).length : (r.players || 0);
+    const hostName = (r.players && Array.isArray(r.players) && r.players.find(p => p && p.name) && r.players.find(p => p.name).name) || r.hostName || 'Wartet…';
+    return `<div class="lobby"><strong>${r.code}</strong><small>${playerCount} Spieler</small><div class="meta">${hostName}</div><div class="actions"><button class="btn" data-join="${r.code}" data-kind="${kind}">${kind==='player'?'Beitreten':'Zuschauen'}</button></div></div>`;
+  }).join('');
+
   list.querySelectorAll('[data-join]').forEach(b => b.onclick = () => {
     const code = b.dataset.join;
     const kind = b.dataset.kind;
-    const name = kind === 'player' ? ($('player-name')?.value || '').trim() : ($('watch-name')?.value || '').trim();
+    const name = (kind === 'player' ? ($('player-name')?.value || '') : ($('watch-name')?.value || '')).trim();
     if (!name) return alert('Bitte gib zuerst deinen Namen ein.');
     if (kind === 'player') socket.emit('join-room', { name, code }, d => enter(d, 'play-error'));
     else socket.emit('watch-room', { code, name }, d => enter(d, 'watch-error'));
@@ -80,7 +85,9 @@ function resetGameUi() {
   if ($('result')) $('result').innerHTML = '';
   if ($('status')) $('status').textContent = '';
   // reset choices UI
-  document.querySelectorAll('[data-choice]').forEach(x => x.classList.remove('selected'));
+  document.querySelectorAll('[data-choice]').forEach(x => { x.classList.remove('selected'); x.disabled = false; });
+  // reset ready indicators
+  document.querySelectorAll('[data-ready-dot]').forEach(d => d.classList.remove('ready'));
 }
 
 function leaveToHome() {
@@ -97,6 +104,14 @@ function enter(data, errorId) {
   roomJoined = true;
   if ($('room-code')) $('room-code').textContent = data.code;
   if (data.targetWins && $('match-rule')) $('match-rule').textContent = `Ziel: ${data.targetWins} Siege`;
+  // If spectator, hide choices and ready button
+  if (role !== 'player') {
+    document.querySelectorAll('.choices, #ready-btn').forEach(el => { if (el) el.style.display = 'none'; });
+    if ($('status')) $('status').textContent = 'Zuschauer-Modus — Du siehst das Match.';
+  } else {
+    document.querySelectorAll('.choices, #ready-btn').forEach(el => { if (el) el.style.display = ''; });
+    if ($('status')) $('status').textContent = '';
+  }
   show('game');
 }
 
@@ -130,14 +145,20 @@ function initFormBindings() {
 
   document.querySelectorAll('[data-choice]').forEach(b => b.onclick = () => {
     if (role !== 'player') return;
+    if (b.disabled) return; // locked because ready
+    document.querySelectorAll('[data-choice]').forEach(x => x.classList.remove('selected'));
+    b.classList.add('selected');
     selected = b.dataset.choice;
     socket.emit('choose', selected);
-    document.querySelectorAll('[data-choice]').forEach(x => x.classList.toggle('selected', x === b));
   });
 
   $('ready-btn')?.addEventListener('click', () => {
     if (!selected) { if ($('status')) $('status').textContent = 'Wähle zuerst Stein, Papier oder Schere.'; return; }
     socket.emit('ready');
+    // lock choices locally until round-reset
+    document.querySelectorAll('[data-choice]').forEach(x => x.disabled = true);
+    // disable ready to avoid double-click
+    if ($('ready-btn')) $('ready-btn').disabled = true;
   });
 }
 
@@ -147,23 +168,76 @@ socket.on('public-lobbies', rooms => { renderLobbies('player', rooms); renderLob
 
 socket.on('state', s => {
   if (!$('game')?.classList.contains('active')) return;
-  s.players.forEach((p, i) => {
-    $('name-' + i) && ($('name-' + i).textContent = p?.name || 'Wartet…');
-    $('score-' + i) && ($('score-' + i).textContent = p?.score || 0);
-    $('ready-' + i) && ($('ready-' + i).textContent = p?.ready ? 'Bereit' : '');
+  (s.players || []).forEach((p, i) => {
+    if ($('name-' + i)) $('name-' + i).textContent = p?.name || 'Wartet…';
+    if ($('score-' + i)) $('score-' + i).textContent = p?.score || 0;
+    // ready indicator dot should be toggled
+    const dot = document.querySelector(`[data-ready-dot="${i}"]`) || $('ready-' + i);
+    if (dot) {
+      if (p?.ready) dot.classList.add('ready');
+      else dot.classList.remove('ready');
+    }
   });
+
+  // If both players are ready, ensure the ready button is disabled for players
+  const bothReady = (s.players || []).filter(Boolean).length === 2 && (s.players || []).every(p => p?.ready);
+  if (role === 'player') {
+    if (bothReady) {
+      if ($('ready-btn')) $('ready-btn').disabled = true;
+      document.querySelectorAll('[data-choice]').forEach(x => x.disabled = true);
+    }
+  }
 });
 
-socket.on('countdown', d => { $('countdown') && ($('countdown').textContent = d.seconds); $('ready-btn') && ($('ready-btn').disabled = true); document.querySelectorAll('[data-choice]').forEach(x => x.disabled = true); });
+socket.on('countdown', d => {
+  if (!$('game')?.classList.contains('active')) return;
+  const sec = Number(d.seconds);
+  if (!Number.isFinite(sec)) return;
+  const el = $('countdown');
+  if (el) el.textContent = sec > 0 ? sec : '';
+  // disable ready while countdown running
+  if (sec > 0) {
+    if ($('ready-btn')) $('ready-btn').disabled = true;
+    document.querySelectorAll('[data-choice]').forEach(x => x.disabled = true);
+  } else {
+    // countdown finished - allow state to control re-enabling
+    // keep disabled until round-reset arrives
+  }
+});
 
 socket.on('round-result', d => {
-  if ($('result')) $('result').innerHTML = `<div class="result-card"><div class="result-winner">${d.winner || '—'}</div><div class="result-score">${d.score?.[0]||0} : ${d.score?.[1]||0}</div></div>`;
-  setTimeout(() => { resetGameUi(); }, 1500);
+  if ($('countdown')) $('countdown').textContent = '';
+  // show both choices and winner for everyone (spectators included)
+  if ($('result')) {
+    const [one, two] = d.choices || [];
+    const winnerText = d.draw ? 'UNENTSCHIEDEN' : (d.winner || '—');
+    $('result').innerHTML = `<div class="result-card"><div class="result-winner">${winnerText}</div><div class="result-choices"><span>${one?.label||'—'}</span><span>${two?.label||'—'}</span></div></div>`;
+  }
+  // after showing result, wait for round-reset to re-enable interaction
 });
+
+socket.on('round-reset', () => {
+  selected = null;
+  if ($('ready-btn')) $('ready-btn').disabled = false;
+  if ($('result')) $('result').innerHTML = '';
+  document.querySelectorAll('[data-choice]').forEach(x => { x.disabled = false; x.classList.remove('selected'); });
+  // clear ready indicators on UI
+  document.querySelectorAll('[data-ready-dot]').forEach(d => d.classList.remove('ready'));
+});
+
+socket.on('match-finished', d => {
+  if ($('winner')) $('winner').innerHTML = `<small>🏆 MATCH GEWONNEN 🏆</small><strong>${d.winner}</strong><span class="finish-countdown" id="finish-countdown">${d.seconds}</span>`;
+});
+
+socket.on('match-countdown', d => { const el = $('finish-countdown'); if (el) el.textContent = d.seconds; });
+
+socket.on('room-closed', () => { resetGameUi(); role = null; show('home'); });
+
+socket.on('disconnect', () => { if ($('game')?.classList.contains('active') && !$('winner')?.classList.contains('show')) $('status').textContent = 'Verbindung verloren.'; });
 
 // initialize
 initThemeButtons();
 initFormBindings();
 
-// ensure back buttons added in dynamic screens also work (they use data-screen attribute so delegation above handles it)
-
+// beforeunload: try to tell server we left (best-effort)
+window.addEventListener('beforeunload', () => { try { if (roomJoined) socket.emit('leave-room'); } catch (e) {} });
